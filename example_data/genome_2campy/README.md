@@ -7,12 +7,12 @@ hypotheticals, and the FACT curation layer assigns final functions.
 ```
 genome_2campy/input/
 ├── fasta/
-│   ├── CCIE6.fasta        # one nucleotide FASTA per prophage (header = >NAME)
-│   └── CJIE6.fasta
+│   ├── CJIE1.fasta        # one nucleotide FASTA per prophage (header = >NAME)
+│   └── CJIE2.fasta
 └── prophage_list.txt      # the prophage basenames, one per line
 ```
 
-Two representative *Campylobacter jejuni* prophages (~33 kb each), CCIE6 and CJIE6.
+Two representative *Campylobacter jejuni* prophages (~33 kb each), CJIE1 and CJIE2.
 
 ## Run it
 ```bash
