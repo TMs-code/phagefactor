@@ -1,0 +1,174 @@
+prophage,gene_id_gff,gene_id_fa,start,end,strand,aa_length,gff_product,emapper_desc,COG_category,preferred_name,is_hypo_gff,is_hypo_emapper,is_hypothetical
+phiNP,fig|67825.47.peg.1887,fig|67825X47XpegX1887,1898905,1899846,-,313,4-hydroxyproline epimerase (EC 5.1.1.8),Proline racemase,E,-,False,False,False
+phiNP,fig|67825.47.peg.1888,fig|67825X47XpegX1888,1899843,1899959,-,38,hypothetical protein,-,-,-,True,True,True
+phiNP,fig|67825.47.peg.1889,fig|67825X47XpegX1889,1899979,1900134,-,51,hypothetical protein,-,-,-,True,True,True
+phiNP,fig|67825.47.peg.1890,fig|67825X47XpegX1890,1900153,1900968,+,271,Transcriptional regulator%2C AraC family,Motif C-terminal to PAS motifs (likely to contribute to PAS structural domain),K,-,False,False,False
+phiNP,fig|67825.47.peg.1891,fig|67825X47XpegX1891,1901107,1902027,+,306,1-pyrroline-4-hydroxy-2-carboxylate deaminase (EC 3.5.4.22),Dihydrodipicolinate synthetase family,EM,dapA2,False,False,False
+phiNP,fig|67825.47.peg.1892,fig|67825X47XpegX1892,1902042,1903673,+,543,2%2C5-dioxovalerate dehydrogenase (EC 1.2.1.26),Aldehyde dehydrogenase family,C,aldH,False,False,False
+phiNP,fig|67825.47.peg.1893,fig|67825X47XpegX1893,1903685,1905286,+,533,Amino acid permease in 4-hydroxyproline catabolic gene cluster,Amino acid permease,E,yveA,False,False,False
+phiNP,fig|67825.47.peg.1894,fig|67825X47XpegX1894,1905331,1906452,-,373,Chorismate mutase I (EC 5.4.99.5) / Cyclohexadienyl dehydrogenase (EC 1.3.1.12)(EC 1.3.1.43),Prephenate dehydrogenase,E,tyrA,False,False,False
+phiNP,fig|67825.47.peg.1895,fig|67825X47XpegX1895,1906463,1907533,-,356,2-keto-3-deoxy-D-arabino-heptulosonate-7-phosphate synthase I alpha (EC 2.5.1.54),Stereospecific condensation of phosphoenolpyruvate (PEP) and D-erythrose-4-phosphate (E4P) giving rise to 3-deoxy-D- arabino-heptulosonate-7-phosphate (DAHP),E,aroF,False,False,False
+phiNP,fig|67825.47.peg.1896,fig|67825X47XpegX1896,1907911,1908429,+,172,Uncharacterized protein YfiR,Domain of unknown function (DUF4154),S,yfiR,False,False,False
+phiNP,fig|67825.47.peg.1897,fig|67825X47XpegX1897,1908422,1909645,+,407,Diguanylate cyclase (EC 2.7.7.65) > DgcN,Periplasmic sensor domain,T,yfiN,False,False,False
+phiNP,fig|67825.47.peg.1898,fig|67825X47XpegX1898,1909666,1910148,+,160,Integral membrane protein YfiB,OmpA family,M,yfiB,False,False,False
+phiNP,fig|67825.47.peg.1899,fig|67825X47XpegX1899,1910277,1910624,-,115,LSU ribosomal protein L19p,This protein is located at the 30S-50S ribosomal subunit interface and may play a role in the structure and function of the aminoacyl-tRNA binding site,J,rplS,False,False,False
+phiNP,fig|67825.47.peg.1900,fig|67825X47XpegX1900,1910684,1911430,-,248,tRNA (guanine(37)-N(1))-methyltransferase (EC 2.1.1.228),Belongs to the RNA methyltransferase TrmD family,J,trmD,False,False,False
+phiNP,fig|67825.47.peg.1901,fig|67825X47XpegX1901,1911474,1912022,-,182,16S rRNA processing protein RimM,"An accessory protein needed during the final step in the assembly of 30S ribosomal subunit, possibly for assembly of the head region. Probably interacts with S19. Essential for efficient processing of 16S rRNA. May be needed both before and after RbfA during the maturation of 16S rRNA. It has affinity for free ribosomal 30S subunits but not for 70S ribosomes",J,rimM,False,False,False
+phiNP,fig|67825.47.peg.1902,fig|67825X47XpegX1902,1912041,1912289,-,82,SSU ribosomal protein S16p,Ribosomal protein S16,J,rpsP,False,False,False
+phiNP,fig|67825.47.peg.1903,fig|67825X47XpegX1903,1912346,1912489,-,47,hypothetical protein,-,-,-,True,True,True
+phiNP,fig|67825.47.peg.1904,fig|67825X47XpegX1904,1912560,1913921,-,453,Signal recognition particle protein Ffh,"Involved in targeting and insertion of nascent membrane proteins into the cytoplasmic membrane. Binds to the hydrophobic signal sequence of the ribosome-nascent chain (RNC) as it emerges from the ribosomes. The SRP-RNC complex is then targeted to the cytoplasmic membrane where it interacts with the SRP receptor FtsY. Interaction with FtsY leads to the transfer of the RNC complex to the Sec translocase for insertion into the membrane, the hydrolysis of GTP by both Ffh and FtsY, and the dissociation of the SRP-FtsY complex into the individual components",U,ffh,False,False,False
+phiNP,fig|67825.47.peg.1905,fig|67825X47XpegX1905,1914087,1914878,+,263,Inner membrane protein YpjD,Cytochrome C assembly protein,S,ypjD,False,False,False
+phiNP,fig|67825.47.peg.1906,fig|67825X47XpegX1906,1914970,1916256,+,428,Putative membrane protein YfjD,Domain of unknown function DUF21,P,yfjD,False,False,False
+phiNP,fig|67825.47.peg.1907,fig|67825X47XpegX1907,1916313,1917014,-,233,Heat shock protein GrpE,"Participates actively in the response to hyperosmotic and heat shock by preventing the aggregation of stress-denatured proteins, in association with DnaK and GrpE. It is the nucleotide exchange factor for DnaK and may function as a thermosensor. Unfolded proteins bind initially to DnaJ",O,grpE,False,False,False
+phiNP,fig|67825.47.peg.1908,fig|67825X47XpegX1908,1917029,1917907,+,292,NAD kinase (EC 2.7.1.23),"Involved in the regulation of the intracellular balance of NAD and NADP, and is a key enzyme in the biosynthesis of NADP. Catalyzes specifically the phosphorylation on 2'-hydroxyl of the adenosine moiety of NAD to yield NADP",H,nadK,False,False,False
+phiNP,fig|67825.47.peg.1909,fig|67825X47XpegX1909,1917993,1919654,+,553,DNA repair protein RecN,May be involved in recombinational repair of damaged DNA,L,recN,False,False,False
+phiNP,fig|67825.47.peg.1910,fig|67825X47XpegX1910,1919804,1920148,+,114,Outer membrane beta-barrel assembly protein BamE,"Part of the outer membrane protein assembly complex, which is involved in assembly and insertion of beta-barrel proteins into the outer membrane",M,bamE,False,False,False
+phiNP,fig|67825.47.peg.1911,fig|67825X47XpegX1911,1920272,1920562,-,96,UPF0125 protein RatB,RnfH family Ubiquitin,S,rnfH,False,False,False
+phiNP,fig|67825.47.peg.1912,fig|67825X47XpegX1912,1920552,1920989,-,145,Ribosome association toxin RatA,Polyketide cyclase / dehydrase and lipid transport,I,ratA,False,False,False
+phiNP,fig|67825.47.peg.1913,fig|67825X47XpegX1913,1921160,1921642,+,160,tmRNA-binding protein SmpB,"the 2 termini fold to resemble tRNA(Ala) and it encodes a tag peptide , a short internal open reading frame. During trans-translation Ala- aminoacylated tmRNA acts like a tRNA, entering the A-site of stalled ribosomes, displacing the stalled mRNA. The ribosome then switches to translate the ORF on the tmRNA",O,smpB,False,False,False
+phiNP,fig|67825.47.peg.1914,fig|67825X47XpegX1914,1922260,1935210,+,4316,T1SS secreted agglutinin RTX,Bacterial Ig-like domain (group 3),M,-,False,False,False
+phiNP,fig|67825.47.peg.1915,fig|67825X47XpegX1915,1935293,1936699,+,468,Type I secretion system%2C outer membrane component LapE,Outer membrane efflux protein,MU,-,False,False,False
+phiNP,fig|67825.47.peg.1916,fig|67825X47XpegX1916,1936696,1938462,+,588,Type I secretion system ATPase%2C LssB family LapB,ABC transporter transmembrane region,V,-,False,False,False
+phiNP,fig|67825.47.peg.1917,fig|67825X47XpegX1917,1938443,1939633,+,396,Type I secretion membrane fusion protein%2C HlyD family @ Type I secretion system%2C membrane fusion protein LapC,HlyD membrane-fusion protein of T1SS,M,-,False,False,False
+phiNP,fig|67825.47.peg.1918,fig|67825X47XpegX1918,1940339,1940584,+,81,modulates SOS induction,DinI-like family,S,-,False,False,False
+phiNP,fig|67825.47.peg.1919,fig|67825X47XpegX1919,1940687,1940866,+,59,Uncharacterized protein Npun_F4007,PFAM YcfA family protein,N,-,False,False,False
+phiNP,fig|67825.47.peg.1920,fig|67825X47XpegX1920,1940890,1941300,+,136,DNA-binding protein%2C CopG family,HicB_like antitoxin of bacterial toxin-antitoxin system,K,-,False,False,False
+phiNP,fig|67825.47.peg.1921,fig|67825X47XpegX1921,1941325,1941879,+,184,hypothetical protein,Bacterial transferase hexapeptide (six repeats),E,-,True,False,True
+phiNP,fig|67825.47.peg.1922,fig|67825X47XpegX1922,1941895,1942473,-,192,Phage tail fiber protein,"Caudovirales tail fibre assembly protein, lambda gpK",S,tfa,False,False,False
+phiNP,fig|67825.47.peg.1923,fig|67825X47XpegX1923,1942473,1943321,-,282,Phage tail fiber%2C side tail fiber protein Stf,Phage Tail Collar Domain,S,-,False,False,False
+phiNP,fig|67825.47.peg.1924,fig|67825X47XpegX1924,1943375,1943980,-,201,hypothetical protein,Uncharacterised protein conserved in bacteria (DUF2313),S,-,True,False,True
+phiNP,fig|67825.47.peg.1925,fig|67825X47XpegX1925,1943977,1945134,-,385,Phage protein Mup47%2C W,of phage Mu protein gp47,S,-,False,False,False
+phiNP,fig|67825.47.peg.1926,fig|67825X47XpegX1926,1945124,1945540,-,138,Phage protein Mup46%2C V,Phage protein GP46,S,-,False,False,False
+phiNP,fig|67825.47.peg.1927,fig|67825X47XpegX1927,1945573,1946157,-,194,Prophage baseplate assembly protein V,baseplate assembly protein,S,-,False,False,False
+phiNP,fig|67825.47.peg.1928,fig|67825X47XpegX1928,1946154,1947233,-,359,Phage tail protein Mup44%2C P,tail protein,S,-,False,False,False
+phiNP,fig|67825.47.peg.1929,fig|67825X47XpegX1929,1947230,1948633,-,467,Phage tail/DNA circulation protein Mup43%2C N,DNA circulation protein,S,-,False,False,False
+phiNP,fig|67825.47.peg.1930,fig|67825X47XpegX1930,1948667,1950580,-,637,hypothetical protein,Transglycosylase SLT domain,M,-,True,False,True
+phiNP,fig|67825.47.peg.1931,fig|67825X47XpegX1931,1950722,1951000,-,92,hypothetical protein,"Phage tail assembly chaperone proteins, E, or 41 or 14",S,-,True,False,True
+phiNP,fig|67825.47.peg.1932,fig|67825X47XpegX1932,1951003,1951374,-,123,Phage tail tube protein,Phage tail tube protein,S,-,False,False,False
+phiNP,fig|67825.47.peg.1933,fig|67825X47XpegX1933,1951378,1952880,-,500,Phage tail sheath Mup39%2C L,Tail sheath protein,N,-,False,False,False
+phiNP,fig|67825.47.peg.1934,fig|67825X47XpegX1934,1952877,1953041,-,54,Phage protein Mup38,Protein of unknown function (DUF2635),S,-,False,False,False
+phiNP,fig|67825.47.peg.1935,fig|67825X47XpegX1935,1953044,1953589,-,181,Phage tail sheath protein,-,-,-,False,True,True
+phiNP,fig|67825.47.peg.1936,fig|67825X47XpegX1936,1953586,1953936,-,116,FIG094335: Putative phage protein,-,-,-,False,True,True
+phiNP,fig|67825.47.peg.1937,fig|67825X47XpegX1937,1953939,1954244,-,101,hypothetical protein,-,-,-,True,True,True
+phiNP,fig|67825.47.peg.1938,fig|67825X47XpegX1938,1954246,1955295,-,349,Phage head%2C major capsid protein E,Phage major capsid protein E,S,JD73_18860,False,False,False
+phiNP,fig|67825.47.peg.1939,fig|67825X47XpegX1939,1955389,1955796,-,135,Phage head%2C head-DNA stabilization protein D,Bacteriophage lambda head decoration protein D,S,-,False,False,False
+phiNP,fig|67825.47.peg.1940,fig|67825X47XpegX1940,1955796,1956398,-,200,hypothetical protein,-,-,-,True,True,True
+phiNP,fig|67825.47.peg.1941,fig|67825X47XpegX1941,1956400,1957266,-,288,Phage head%2C head-tail preconnector protease C,Peptidase family S49,OU,JD73_18850,False,False,False
+phiNP,fig|67825.47.peg.1942,fig|67825X47XpegX1942,1957266,1958909,-,547,Phage head%2C portal protein B,"Phage portal protein, lambda family",S,JD73_18735,False,False,False
+phiNP,fig|67825.47.peg.1943,fig|67825X47XpegX1943,1958909,1959172,-,87,Phage head%2C head-tail joining protein W,gpW,S,-,False,False,False
+phiNP,fig|67825.47.peg.1944,fig|67825X47XpegX1944,1959181,1961160,-,659,Phage head%2C terminase DNA packaging protein A,Phage terminase large subunit (GpA),S,A,False,False,False
+phiNP,fig|67825.47.peg.1945,fig|67825X47XpegX1945,1961126,1961731,-,201,Phage head%2C terminase subunit Nu1,-,-,-,False,True,True
+phiNP,fig|67825.47.peg.1946,fig|67825X47XpegX1946,1961902,1962543,-,213,hypothetical protein,-,-,-,True,True,True
+phiNP,fig|67825.47.peg.1947,fig|67825X47XpegX1947,1962554,1963219,-,221,hypothetical protein,-,-,-,True,True,True
+phiNP,fig|67825.47.peg.1948,fig|67825X47XpegX1948,1963209,1963739,-,176,Phage protein,-,-,-,False,True,True
+phiNP,fig|67825.47.peg.1949,fig|67825X47XpegX1949,1963736,1964224,-,162,Phage protein,-,-,-,False,True,True
+phiNP,fig|67825.47.peg.1950,fig|67825X47XpegX1950,1964649,1964846,-,65,hypothetical protein,-,-,-,True,True,True
+phiNP,fig|67825.47.peg.1951,fig|67825X47XpegX1951,1964818,1965372,-,184,Uncharacterized protein RzpQ,Protein of unknown function (DUF2514),S,-,False,False,False
+phiNP,fig|67825.47.peg.1952,fig|67825X47XpegX1952,1965376,1965783,-,135,Structural protein P5,-,-,VP1566,False,False,False
+phiNP,fig|67825.47.peg.1953,fig|67825X47XpegX1953,1965780,1966112,-,110,hypothetical protein,Phage holin family (Lysis protein S),S,-,True,False,True
+phiNP,fig|67825.47.peg.1954,fig|67825X47XpegX1954,1966290,1967342,-,350,Phage DNA adenine methylase (EC 2.1.1.72),DNA methylase,L,-,False,False,False
+phiNP,fig|67825.47.peg.1955,fig|67825X47XpegX1955,1967492,1967683,-,63,Phage protein (ACLAME 1157),-,-,-,False,True,True
+phiNP,fig|67825.47.peg.1956,fig|67825X47XpegX1956,1967882,1968577,-,231,Phage antitermination protein Q,Phage antitermination protein Q,S,-,False,False,False
+phiNP,fig|67825.47.peg.1957,fig|67825X47XpegX1957,1968599,1969666,-,355,Uncharacterized protein%2C YdfU family,Protein of unknown function (DUF968),V,ydfU,False,False,False
+phiNP,fig|67825.47.peg.1958,fig|67825X47XpegX1958,1969663,1971390,-,575,putative cytosine-specific modification methylase,C-5 cytosine-specific DNA methylase,L,dcm,False,False,False
+phiNP,fig|67825.47.peg.1959,fig|67825X47XpegX1959,1971383,1972264,-,293,Phage DNA N-6-adenine methyltransferase,DNA N-6-adenine-methyltransferase (Dam),KT,-,False,False,False
+phiNP,fig|67825.47.peg.1960,fig|67825X47XpegX1960,1972261,1973133,-,290,Phage DNA replication protein O,Conserved phage C-terminus (Phg_2220_C),K,yfdO,False,False,False
+phiNP,fig|67825.47.peg.1961,fig|67825X47XpegX1961,1973311,1974015,-,234,Putative DNA-binding protein Roi of bacteriophage BP-933W,Phage regulatory protein Rha (Phage_pRha),S,-,False,False,False
+phiNP,fig|67825.47.peg.1962,fig|67825X47XpegX1962,1973996,1974193,-,65,hypothetical protein,-,-,-,True,True,True
+phiNP,fig|67825.47.peg.1963,fig|67825X47XpegX1963,1974190,1974747,-,185,Uncharacterized protein YmfL,-,-,ymfL,False,False,False
+phiNP,fig|67825.47.peg.1964,fig|67825X47XpegX1964,1974740,1975003,-,87,Phage DNA binding protein,Helix-turn-helix domain,K,-,False,False,False
+phiNP,fig|67825.47.peg.1965,fig|67825X47XpegX1965,1975147,1975797,+,216,Transcriptional regulator%2C Xre family,Peptidase S24-like,K,-,False,False,False
+phiNP,fig|67825.47.peg.1966,fig|67825X47XpegX1966,1976096,1976242,+,48,hypothetical protein,-,-,-,True,True,True
+phiNP,fig|67825.47.peg.1967,fig|67825X47XpegX1967,1976790,1977161,+,123,Uncharacterized protein YfdP,-,-,yfdP,False,False,False
+phiNP,fig|67825.47.peg.1968,fig|67825X47XpegX1968,1977218,1978045,+,275,Uncharacterized protein YfdQ,Uncharacterized conserved protein (DUF2303),S,yfdQ,False,False,False
+phiNP,fig|67825.47.peg.1969,fig|67825X47XpegX1969,1978184,1978726,+,180,COG1896: Predicted hydrolases of HD superfamily,Metal dependent phosphohydrolases with conserved 'HD' motif.,S,yfdR,False,False,False
+phiNP,fig|67825.47.peg.1970,fig|67825X47XpegX1970,1978711,1978911,+,66,hypothetical protein,-,-,-,True,True,True
+phiNP,fig|67825.47.peg.1971,fig|67825X47XpegX1971,1978908,1979234,+,108,hypothetical protein,-,-,-,True,True,True
+phiNP,fig|67825.47.peg.1972,fig|67825X47XpegX1972,1979231,1979962,+,243,hypothetical protein,DNA methylase,L,-,True,False,True
+phiNP,fig|67825.47.peg.1973,fig|67825X47XpegX1973,1979959,1980156,+,65,hypothetical protein,-,-,-,True,True,True
+phiNP,fig|67825.47.peg.1974,fig|67825X47XpegX1974,1980156,1980629,+,157,Exodeoxyribonuclease VIII (EC 3.1.11.-),"3' exoribonuclease, RNase T-like",L,-,False,False,False
+phiNP,fig|67825.47.peg.1975,fig|67825X47XpegX1975,1980766,1980972,+,68,hypothetical protein,-,-,-,True,True,True
+phiNP,fig|67825.47.peg.1976,fig|67825X47XpegX1976,1980933,1982099,+,388,Phage integrase,Phage integrase family,L,-,False,False,False
+phiNP,fig|67825.47.peg.1977,fig|67825X47XpegX1977,1982157,1983890,+,577,hypothetical protein,AAA ATPase domain,S,-,True,False,True
+phiNP,fig|67825.47.peg.1978,fig|67825X47XpegX1978,1983970,1984851,+,293,DNA-methyltransferase,D12 class N6 adenine-specific DNA methyltransferase,L,-,False,False,False
+phiNP,fig|67825.47.peg.1979,fig|67825X47XpegX1979,1985155,1985538,+,127,Integrase,Belongs to the 'phage' integrase family,L,intA,False,False,False
+phiNP,fig|67825.47.peg.1980,fig|67825X47XpegX1980,1985670,1985954,+,94,Mobile element protein,Transposase,L,-,False,False,False
+phiNP,fig|67825.47.peg.1981,fig|67825X47XpegX1981,1985996,1986805,+,269,Transposase,"26 bp terminal inverted repeat of ISEc14, contains 4 mismatches",L,-,False,False,False
+phiNP,fig|67825.47.peg.1982,fig|67825X47XpegX1982,1986927,1987172,-,81,hypothetical protein,-,-,-,True,True,True
+phiNP,fig|67825.47.peg.1983,fig|67825X47XpegX1983,1987740,1987976,-,78,Mobile element protein,Transposase,L,-,False,False,False
+phiNP,fig|67825.47.peg.1984,fig|67825X47XpegX1984,1988139,1988279,-,46,hypothetical protein,-,-,-,True,True,True
+phiNP,fig|67825.47.peg.1985,fig|67825X47XpegX1985,1988636,1998262,+,3208,hypothetical protein,nuclear chromosome segregation,D,lifA,True,False,True
+phiNP,fig|67825.47.peg.1986,fig|67825X47XpegX1986,1998632,2000203,-,523,Mobile element protein,"30 bp terminal inverted repeat of ISCro1, contains 12 mismatches",L,-,False,False,False
+phiNP,fig|67825.47.peg.1987,fig|67825X47XpegX1987,2000223,2000570,-,115,Mobile element protein,IS66 Orf2 like protein,L,-,False,False,False
+phiNP,fig|67825.47.peg.1988,fig|67825X47XpegX1988,2000570,2001217,-,215,Mobile element protein,"30 bp terminal inverted repeat of ISCro1, contains 12 mismatches",L,-,False,False,False
+phiNP,fig|67825.47.peg.1989,fig|67825X47XpegX1989,2001500,2002147,+,215,Mobile element protein,"30 bp terminal inverted repeat of ISCro1, contains 12 mismatches",L,-,False,False,False
+phiNP,fig|67825.47.peg.1990,fig|67825X47XpegX1990,2002147,2002494,+,115,Mobile element protein,IS66 Orf2 like protein,L,-,False,False,False
+phiNP,fig|67825.47.peg.1991,fig|67825X47XpegX1991,2002514,2004085,+,523,Mobile element protein,"30 bp terminal inverted repeat of ISCro1, contains 12 mismatches",L,-,False,False,False
+phiSM,fig|67825.47.peg.3027,fig|67825X47XpegX3027,3040656,3041735,-,359,Alanine racemase (EC 5.1.1.1),Catalyzes the interconversion of L-alanine and D- alanine. May also act on other amino acids,E,alr,False,False,False
+phiSM,fig|67825.47.peg.3028,fig|67825X47XpegX3028,3041887,3043302,-,471,Replicative DNA helicase (DnaB) (EC 3.6.4.12),"it exhibits DNA-dependent ATPase activity and contains distinct active sites for ATP binding, DNA binding, and interaction with DnaC protein, primase, and other prepriming proteins",L,dnaB,False,False,False
+phiSM,fig|67825.47.peg.3029,fig|67825X47XpegX3029,3043367,3044350,+,327,Quinone oxidoreductase (EC 1.6.5.5),Zinc-binding dehydrogenase,C,qor,False,False,False
+phiSM,fig|67825.47.peg.3030,fig|67825X47XpegX3030,3044530,3044772,-,80,Phage shock protein G,Phage shock protein G (Phageshock_PspG),S,pspG,False,False,False
+phiSM,fig|67825.47.peg.3031,fig|67825X47XpegX3031,3044906,3045886,-,326,tRNA-dihydrouridine(20/20a) synthase (EC 1.3.1.91),"Catalyzes the synthesis of 5,6-dihydrouridine (D), a modified base found in the D-loop of most tRNAs, via the reduction of the C5-C6 double bond in target uridines. Specifically modifies U20 and U20a in tRNAs",J,dusA,False,False,False
+phiSM,fig|67825.47.peg.3032,fig|67825X47XpegX3032,3046338,3046634,+,98,hypothetical protein,Phage derived protein Gp49-like (DUF891),S,-,True,False,True
+phiSM,fig|67825.47.peg.3033,fig|67825X47XpegX3033,3046636,3046953,+,105,Transcriptional regulator%2C Fis family,Helix-turn-helix domain,K,-,False,False,False
+phiSM,fig|67825.47.peg.3034,fig|67825X47XpegX3034,3047090,3048100,-,336,Putative outer membrane or exported protein STM4242,"F plasmid transfer operon, TraF, protein",S,traF,False,False,False
+phiSM,fig|67825.47.peg.3035,fig|67825X47XpegX3035,3048322,3049215,-,297,FIG00639972: hypothetical protein,"Type VI secretion system VasI, EvfG, VC_A0118",S,-,False,False,False
+phiSM,fig|67825.47.peg.3036,fig|67825X47XpegX3036,3049220,3049552,-,110,hypothetical protein,-,-,-,True,True,True
+phiSM,fig|67825.47.peg.3037,fig|67825X47XpegX3037,3049817,3049957,-,46,hypothetical protein,Hok/gef family,S,-,True,False,True
+phiSM,fig|67825.47.peg.3038,fig|67825X47XpegX3038,3050148,3050408,-,86,hypothetical protein,Ogr/Delta-like zinc finger,S,-,True,False,True
+phiSM,fig|67825.47.peg.3039,fig|67825X47XpegX3039,3050451,3051560,-,369,Phage tail formation protein GpD,Phage late control gene D protein (GPD),S,gpD,False,False,False
+phiSM,fig|67825.47.peg.3040,fig|67825X47XpegX3040,3051718,3052902,+,394,Phage tail sheath monomer GpFI,Phage tail sheath C-terminal domain,S,fI,False,False,False
+phiSM,fig|67825.47.peg.3041,fig|67825X47XpegX3041,3052902,3053414,+,170,Phage major tail tube protein GpFII,Phage tail tube protein FII,S,-,False,False,False
+phiSM,fig|67825.47.peg.3042,fig|67825X47XpegX3042,3053470,3053844,+,124,Phage tail protein GpE,tail protein,S,-,False,False,False
+phiSM,fig|67825.47.peg.3043,fig|67825X47XpegX3043,3053853,3054008,+,51,Phage P2 GpE family protein,Phage P2 GpE,S,-,False,False,False
+phiSM,fig|67825.47.peg.3044,fig|67825X47XpegX3044,3053995,3056802,+,935,Phage tail length tape-measure protein GpT,Phage-related minor tail protein,S,-,False,False,False
+phiSM,fig|67825.47.peg.3045,fig|67825X47XpegX3045,3056815,3057303,+,162,Phage tail protein GpU,Phage P2 GpU,S,gpU,False,False,False
+phiSM,fig|67825.47.peg.3046,fig|67825X47XpegX3046,3057332,3057931,-,199,Phage DNA invertase,Helix-turn-helix domain of resolvase,L,-,False,False,False
+phiSM,fig|67825.47.peg.3047,fig|67825X47XpegX3047,3058169,3058297,+,42,hypothetical protein,-,-,-,True,True,True
+phiSM,fig|67825.47.peg.3048,fig|67825X47XpegX3048,3058710,3059243,+,177,Phage tail fiber assembly protein Mup50%2C U,"Caudovirales tail fibre assembly protein, lambda gpK",S,-,False,False,False
+phiSM,fig|67825.47.peg.3049,fig|67825X47XpegX3049,3059272,3059799,-,175,Phage tail fiber protein,"Caudovirales tail fibre assembly protein, lambda gpK",S,-,False,False,False
+phiSM,fig|67825.47.peg.3050,fig|67825X47XpegX3050,3059803,3061821,-,672,Phage tail fiber protein GpH,"virus tail, fiber",S,-,False,False,False
+phiSM,fig|67825.47.peg.3051,fig|67825X47XpegX3051,3061824,3062354,-,176,Phage tail formation protein GpI,Phage tail protein (Tail_P2_I),S,gpI,False,False,False
+phiSM,fig|67825.47.peg.3052,fig|67825X47XpegX3052,3062347,3063243,-,298,Phage baseplate assembly protein GpJ,Baseplate J-like protein,S,-,False,False,False
+phiSM,fig|67825.47.peg.3053,fig|67825X47XpegX3053,3063247,3063597,-,116,Phage baseplate assembly protein GpW,Gene 25-like lysozyme,S,-,False,False,False
+phiSM,fig|67825.47.peg.3054,fig|67825X47XpegX3054,3063594,3064175,-,193,Phage baseplate assembly protein GpV,"Type VI secretion system, phage-baseplate injector",S,V,False,False,False
+phiSM,fig|67825.47.peg.3055,fig|67825X47XpegX3055,3064172,3064807,-,211,Phage tail completion protein GpS,Phage virion morphogenesis family,S,-,False,False,False
+phiSM,fig|67825.47.peg.3056,fig|67825X47XpegX3056,3064800,3065267,-,155,Phage tail protein,P2 phage tail completion protein R (GpR),S,-,False,False,False
+phiSM,fig|67825.47.peg.3057,fig|67825X47XpegX3057,3065405,3065812,-,135,hypothetical protein,Protein of unknown function (DUF2570),S,-,True,False,True
+phiSM,fig|67825.47.peg.3058,fig|67825X47XpegX3058,3065809,3066354,-,181,Lysozyme (N-acetylmuramidase) family%2C (EC 3.2.1.17),secretion activating protein,S,-,False,False,False
+phiSM,fig|67825.47.peg.3059,fig|67825X47XpegX3059,3066409,3066732,-,107,COG1263: Phosphotransferase system IIC components%2C glucose/maltose/N-acetylglucosamine-specific,Phage holin family (Lysis protein S),S,-,False,False,False
+phiSM,fig|67825.47.peg.3060,fig|67825X47XpegX3060,3066735,3066935,-,66,Tail component protein,Phage Tail Protein X,S,-,False,False,False
+phiSM,fig|67825.47.peg.3061,fig|67825X47XpegX3061,3066935,3067429,-,164,Phage head completion protein,Phage head completion protein (GPL),S,-,False,False,False
+phiSM,fig|67825.47.peg.3062,fig|67825X47XpegX3062,3067532,3068332,-,266,Phage terminase%2C endonuclease subunit GpM,Phage small terminase subunit,S,M,False,False,False
+phiSM,fig|67825.47.peg.3063,fig|67825X47XpegX3063,3068378,3069430,-,350,Phage major capsid protein GpN,"Phage major capsid protein, P2 family",S,-,False,False,False
+phiSM,fig|67825.47.peg.3064,fig|67825X47XpegX3064,3069454,3070290,-,278,Phage capsid scaffolding protein GpO,Phage capsid scaffolding protein (GPO) serine peptidase,S,O,False,False,False
+phiSM,fig|67825.47.peg.3065,fig|67825X47XpegX3065,3070445,3072196,+,583,Phage terminase%2C ATPase subunit GpP,Terminase RNaseH-like domain,S,P,False,False,False
+phiSM,fig|67825.47.peg.3066,fig|67825X47XpegX3066,3072196,3073242,+,348,Phage portal vertex protein GpQ,portal protein,S,Q,False,False,False
+phiSM,fig|67825.47.peg.3067,fig|67825X47XpegX3067,3073311,3073439,-,42,hypothetical protein,-,-,-,True,True,True
+phiSM,fig|67825.47.peg.3068,fig|67825X47XpegX3068,3073934,3074452,+,172,hypothetical protein,Domain of unknown function (DUF4760),S,-,True,False,True
+phiSM,fig|67825.47.peg.3069,fig|67825X47XpegX3069,3074543,3074854,-,103,hypothetical protein,-,-,-,True,True,True
+phiSM,fig|67825.47.peg.3070,fig|67825X47XpegX3070,3074859,3075818,-,319,putative plasmid partition protein,StbA protein,O,-,False,False,False
+phiSM,fig|67825.47.peg.3071,fig|67825X47XpegX3071,3075895,3078717,-,940,Phage replication protein GpA%2C endonuclease,Bacteriophage replication gene A protein (GPA),L,-,False,False,False
+phiSM,fig|67825.47.peg.3072,fig|67825X47XpegX3072,3078724,3079089,-,121,hypothetical protein,-,-,-,True,True,True
+phiSM,fig|67825.47.peg.3073,fig|67825X47XpegX3073,3079162,3079392,-,76,putative derepression protein,-,-,-,False,True,True
+phiSM,fig|67825.47.peg.3074,fig|67825X47XpegX3074,3079713,3080264,-,183,hypothetical protein,-,-,-,True,True,True
+phiSM,fig|67825.47.peg.3075,fig|67825X47XpegX3075,3080279,3080578,-,99,hypothetical protein,-,-,-,True,True,True
+phiSM,fig|67825.47.peg.3076,fig|67825X47XpegX3076,3080575,3080820,-,81,hypothetical protein,Transcriptional regulator,K,-,True,False,True
+phiSM,fig|67825.47.peg.3077,fig|67825X47XpegX3077,3080817,3081020,-,67,hypothetical protein,-,-,-,True,True,True
+phiSM,fig|67825.47.peg.3078,fig|67825X47XpegX3078,3081044,3081454,-,136,hypothetical protein,-,-,-,True,True,True
+phiSM,fig|67825.47.peg.3079,fig|67825X47XpegX3079,3081548,3081661,-,37,hypothetical protein,-,-,-,True,True,True
+phiSM,fig|67825.47.peg.3080,fig|67825X47XpegX3080,3081658,3081900,-,80,hypothetical protein,Domain of unknown function (DUF4754),S,-,True,False,True
+phiSM,fig|67825.47.peg.3081,fig|67825X47XpegX3081,3081912,3082199,-,95,hypothetical protein,-,-,-,True,True,True
+phiSM,fig|67825.47.peg.3082,fig|67825X47XpegX3082,3082210,3082668,-,152,hypothetical protein,Domain of unknown function (DUF4761),S,-,True,False,True
+phiSM,fig|67825.47.peg.3083,fig|67825X47XpegX3083,3082680,3082838,-,52,hypothetical protein,-,-,-,True,True,True
+phiSM,fig|67825.47.peg.3084,fig|67825X47XpegX3084,3082893,3083180,-,95,repressor of Pc%3B required for prophage excision%3B inhibits integration%3B activates P11 promoter of satellite phage P4,Regulatory phage protein cox,S,cox,False,False,False
+phiSM,fig|67825.47.peg.3085,fig|67825X47XpegX3085,3083713,3084717,+,334,Phage integrase,Phage integrase family,L,-,False,False,False
+phiSM,fig|67825.47.peg.3086,fig|67825X47XpegX3086,3084897,3085145,-,82,Putative outer membrane or exported protein STM4242,"F plasmid transfer operon, TraF, protein",S,traF,False,False,False
+phiSM,fig|67825.47.peg.3087,fig|67825X47XpegX3087,3085258,3085389,+,43,hypothetical protein,-,-,-,True,True,True
+phiSM,fig|67825.47.peg.3088,fig|67825X47XpegX3088,3085431,3085946,+,171,Zinc uptake regulation protein Zur,Ferric uptake regulator family,P,zur,False,False,False
+phiSM,fig|67825.47.peg.3089,fig|67825X47XpegX3089,3086023,3086235,-,70,UPF0337 protein YjbJ,CsbD-like,S,yjbJ,False,False,False
+phiSM,fig|67825.47.peg.3090,fig|67825X47XpegX3090,3086362,3087687,-,441,DNA-damage-inducible protein F,MatE,V,dinF,False,False,False
+phiSM,fig|67825.47.peg.3091,fig|67825X47XpegX3091,3087825,3088433,-,202,SOS-response repressor and protease LexA (EC 3.4.21.88),"Represses a number of genes involved in the response to DNA damage (SOS response), including recA and lexA. Binds to the 16 bp palindromic sequence 5'-CTGTATATATATACAG-3'. In the presence of single-stranded DNA, RecA interacts with LexA causing an autocatalytic cleavage which disrupts the DNA-binding part of LexA, leading to derepression of the SOS regulon and eventually DNA repair",L,lexA,False,False,False
+phiSM,fig|67825.47.peg.3092,fig|67825X47XpegX3092,3088557,3088925,-,122,Diacylglycerol kinase (EC 2.7.1.107),Recycling of diacylglycerol produced during the turnover of membrane phospholipid,M,dgkA,False,False,False
+phiSM,fig|67825.47.peg.3093,fig|67825X47XpegX3093,3088953,3089069,-,38,hypothetical protein,-,-,-,True,True,True
+phiSM,fig|67825.47.peg.3094,fig|67825X47XpegX3094,3089096,3091516,+,806,Glycerol-3-phosphate acyltransferase (EC 2.3.1.15),Phosphate acyltransferases,I,plsB,False,False,False

@@ -1,0 +1,106 @@
+# =============================================================================
+# phageFACTor — single source of truth for paths + thresholds
+# =============================================================================
+# Path resolution order (see config/config.py):
+#   1. ${PHAGEFACTOR_ROOT} environment variable, if set
+#   2. the directory two levels above this file (repo root)  ← portable default
+# All sub-paths below are RELATIVE to that root, so the repo runs anywhere
+# (laptop, cluster, CI) with no edits. Override any absolute path per-machine
+# by exporting PHAGEFACTOR_ROOT or editing the `databases:` block.
+# =============================================================================
+
+project:
+  name: phagefactor
+  host_genus: Campylobacter        # default; set per dataset (e.g. Citrobacter)
+  # provenance tag written into GenBank /note
+  note_tag: phagefactor
+
+# --- Layout (relative to root) ----------------------------------------------
+paths:
+  input_dir:      input
+  fasta_dir:      input/fasta
+  split_dir:      input/split
+  pharokka_out:   00c_pharokka
+  phold_out:      01_phold
+  foldseek_out:   02_foldseek
+  comparison_out: 03_comparison
+  # 2026-06-26: step 04 (curate) + step 05 (build output) share ONE deliverable
+  # folder (04_output); curated_annotations.csv + review_suggested.csv live in the
+  # 04_output/curation/ subfolder. Step 06 (phynteny) + step 07 (integrate) share
+  # ONE folder (05_phynteny); phynteny's verbose log + input FASTA go in 05_phynteny/run/.
+  output_out:     04_output
+  curation_out:   04_output/curation
+  phynteny_out:   05_phynteny
+  phynteny_run:   05_phynteny/run
+  # Step 07 = integrate (merge phynteny categories + synteny C1/Cro hints into the
+  # final table + GBK). Writes into 05_phynteny (final_annotations_integrated.csv).
+  # goPhage (ortholog-group propagation) is DEFERRED — needs a much larger input
+  # dataset to build ortholog groups; not part of v1.
+  gophage_out:    05_phynteny
+  logs_dir:       logs
+
+# --- Tool databases (the ONLY block that is machine-specific) ----------------
+# Point each at the FoldSeek DB *root* (NOT the *_ca file). Leave a value blank
+# to skip that DB. On an HPC cluster these typically live under shared project
+# storage; set the FOLDSEEK_DB_ROOT env var or edit here.
+databases:
+  pharokka_db: ""                  # set to your pharokka_db path
+  foldseek_db_root: ""             # e.g. /data/databases/foldseek_dbs (or set $FOLDSEEK_DB_ROOT)
+  # afdb50 = AlphaFold DB UniProt50-minimal (the full per-entry AFDB50 set).
+  # Note: AFDBClusters was tried and DROPPED — its structural clustering was not
+  # granular enough and lost many relevant (host-derived moron) hits vs afdb50.
+  foldseek_local_dbs:
+    afdb-swissprot: afdb_swissprot_db/afdb_swissprot
+    pdb100:         pdb100_db/pdb100
+    afdb50:         afdb50_db/afdb50
+  # Per-DB NCBI-taxon keep-filter (empty = keep all). 2=Bacteria 2157=Archaea 10239=Viruses
+  foldseek_taxon_filter:
+    afdb50: "2,2157,10239"
+    afdb-swissprot: ""
+    pdb100: ""
+
+# --- SLURM / compute (scrubbed of personal data) -----------------------------
+slurm:
+  email: ""                        # set your notification email, or leave blank
+  mail_type: "BEGIN,END,FAIL"
+  partition: common
+  qos: fast
+  tmpdir: /local/scratch/tmp
+  # 2026-06: CPU-only by default. GPU detection (PyTorch/CUDA) was unreliable in
+  # testing and phold runs fine on CPU for these dataset sizes. Flip to 1 + set the
+  # gpu_* fields only if you have a working CUDA env.
+  phold_use_gpu: 0
+  phold_proteins_use_gpu: 0
+  gpu_partition: gpu
+  gpu_qos: gpu
+  gpu_gres: "gpu:1"
+  protein_batch_size: 50           # fixed; last batch may be partial
+
+# --- Step 02: custom FoldSeek thresholds ------------------------------------
+foldseek:
+  threads: 16
+  evalue_max: 0.1                  # Gate 1 quality filter
+  score_override: 200             # rescue: keep hit if score >= this even if evalue >= max
+  prostt5_mask_threshold: 25       # per-residue 3Di masking (0 = off)
+  confident_evalue: 1.0e-3
+  good_evalue: 0.01
+  borderline_score: 100
+  api_url: https://search.foldseek.com/api   # webAPI search mode
+
+# --- Step 03: comparison thresholds -----------------------------------------
+compare:
+  fuzzy_strong_threshold: 0.35     # Jaccard
+  fuzzy_partial_threshold: 0.08
+  phold_trusted_conf: [high, medium]
+  phold_weak_conf: [low]
+
+# --- Step 06: phynteny ------------------------------------------------------
+phynteny:
+  threshold: 0.8
+
+# --- Optional pre-CDS-computed sub-mode (e.g. citro/eggNOG inputs) -----------
+# Build a base GBK from absolute host-genome coords when there is no Pharokka GBK.
+precomputed:
+  source_genome_fasta:  input/genome/source_genome.fasta
+  prophage_windows_csv: input/fasta/prophage_windows.csv   # prophage,genome_start,genome_stop
+  rich_gene_metadata_csv: input/gene_metadata_rich.csv

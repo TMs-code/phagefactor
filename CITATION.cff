@@ -1,0 +1,72 @@
+cff-version: 1.2.0
+title: "phageFACTor: structure-aware functional annotation of prophage genomes"
+message: "If you use this software, please cite it and its dependencies."
+type: software
+authors:
+  - given-names: Tanaïs
+    family-names: Moreau
+    affiliation: Institut Pasteur
+license: MIT
+repository-code: "https://github.com/TMs-code/phageFACTor"
+keywords:
+  - prophage
+  - phage annotation
+  - structural homology
+  - FoldSeek
+  - ProstT5
+
+# ---------------------------------------------------------------------------
+# Dependencies — please cite these too.
+# ---------------------------------------------------------------------------
+references:
+  - type: article
+    title: "Phold: the protein structure-based phage annotation tool"
+    authors:
+      - family-names: Bouras
+        given-names: George
+    doi: 10.1093/nar/gkaf1448
+    notes: "Nucleic Acids Research, 2026 (verify on publication)."
+  - type: article
+    title: "Pharokka: a fast scalable bacteriophage annotation tool"
+    authors:
+      - family-names: Bouras
+        given-names: George
+    doi: 10.1093/bioinformatics/btac776
+    repository-code: "https://github.com/gbouras13/pharokka"
+  - type: article
+    title: "Fast and accurate protein structure search with Foldseek"
+    authors:
+      - family-names: van Kempen
+        given-names: Michel
+      - family-names: Steinegger
+        given-names: Martin
+    doi: 10.1038/s41587-023-01773-0
+    repository-code: "https://github.com/steineggerlab/foldseek"
+  - type: article
+    title: "Bilingual language model for protein sequence and structure (ProstT5)"
+    authors:
+      - family-names: Heinzinger
+        given-names: Michael
+      - family-names: Rost
+        given-names: Burkhard
+    doi: 10.1093/nargab/lqae150
+    repository-code: "https://github.com/mheinzinger/ProstT5"
+    notes: "NAR Genomics and Bioinformatics, 6(4):lqae150, 2024."
+  - type: article
+    title: "Synteny-aware functional annotation of bacteriophage genomes with Phynteny"
+    authors:
+      - family-names: Grigson
+        given-names: Susanna R.
+      - family-names: Edwards
+        given-names: Robert A.
+    doi: 10.1101/2025.07.28.667340
+    repository-code: "https://github.com/susiegriggo/Phynteny_transformer"
+    notes: "bioRxiv preprint, 2025."
+  - type: article
+    title: "eggNOG 6.0: enabling comparative genomics across 12 535 organisms (for pre-CDS-computed / host-annotated inputs)"
+    authors:
+      - family-names: Hernández-Plaza
+        given-names: Ana
+    doi: 10.1093/nar/gkac1022
+    repository-code: "https://github.com/eggnogdb/eggnog-mapper"
+    notes: "Nucleic Acids Research, 51(D1):D389–D394, 2023."

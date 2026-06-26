@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.ipynb_checkpoints/
+
+# Pipeline run outputs (regenerated; never commit)
+00c_pharokka/
+01_phold/
+02_foldseek/
+03_comparison/
+04_output/
+05_phynteny/
+logs/
+
+# Runtime input (user-supplied data); keep the templates we ship
+input/*
+!input/overrides.tsv
+!input/prophage_list.txt
+!input/.gitkeep
+
+# Databases (large, machine-specific)
+databases/
+*_db/
+*.idx
+*.idx.*
+
+# Windows "mark of the web" sidecars (created when files are copied from Windows)
+*:Zone.Identifier
+
+# OS / editor
+.DS_Store
+*.swp
+*~
+
+# Keep example_data tracked — it IS the quick-start + smoke test
+!example_data/
+!example_data/**
