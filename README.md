@@ -1,10 +1,7 @@
 # phageFACTor
 
 **Structure-aware functional annotation of prophage (phage) genomes.**
-
-*The name reads **phage + FACT + or**: **FACT** = **F**unctional **A**ssignment
-and **C**uration **T**ool, and the trailing **…or** nods to the phage-boost
-**factor** at the heart of the curation engine.*
+*FACT = Filter / Assign / Curate Tool.*
 
 phageFACTor rescues the "hypothetical protein" fraction of prophage annotations by
 combining three evidence layers and reconciling them with an auditable curation
@@ -15,12 +12,12 @@ engine:
 3. **Custom FoldSeek** — the 3Di tokens searched against general structural DBs
    (PDB100, AFDB-SwissProt, AFDB50) for hits Phold misses.
 
-A comparison + curation step (**the assign-and-curate core**) reconciles Phold vs custom-FoldSeek
+A comparison + curation step (**the FAC core**) reconciles Phold vs custom-FoldSeek
 per gene, assigns an evidence category, and emits a curated table + updated GenBank.
 Optional: **Phynteny** synteny categories and a positional C1/Cro switch heuristic.
 
 > Status: research code, first repo-grade draft. The scientific logic is mature and
-> validated on *Campylobacter* and *Citrobacter* prophages.
+> validated on *Campylobacter*, *Citrobacter* and *OMM12 consortia* prophages.
 
 ---
 
@@ -28,13 +25,8 @@ Optional: **Phynteny** synteny categories and a positional C1/Cro switch heurist
 
 |                 | **Local FoldSeek** (DBs on disk) | **WebAPI FoldSeek** (no local DB) |
 |-----------------|----------------------------------|-----------------------------------|
-| **Genome mode** (nucleotide FASTAs) | full pipeline, cluster-scale | no big DB download |
-| **Protein mode** (bulk CDS / pre-defined GBK) | full pipeline | no big DB download |
-
-> **Execution:** v1 runs through SLURM — `submit_all.sh` issues `sbatch` jobs.
-> WebAPI search mode removes the *database* requirement (ProstT5/FoldSeek run
-> server-side), **not** the scheduler. A laptop/local (no-SLURM) run path is
-> planned but not yet shipped.
+| **Genome mode** (nucleotide FASTAs) | full pipeline, cluster-scale | laptop-friendly, no big DB |
+| **Protein mode** (bulk CDS / pre-defined GBK) | full pipeline | laptop-friendly |
 
 - **Genome mode**: one nucleotide FASTA per prophage → Pharokka → Phold → FoldSeek.
 - **Protein mode**: bulk protein FASTA (all treated as hypothetical) → Phold proteins
@@ -62,7 +54,7 @@ micromamba activate phagefactor
 #    everything else resolves relative to the repo, or to $PHAGEFACTOR_ROOT
 ```
 
-No personal paths are baked in: paths resolve from `$PHAGEFACTOR_ROOT` (or the repo
+No personal paths: paths resolve from `$PHAGEFACTOR_ROOT` (or the repo
 root) and the single `config/config.yaml`. See [`docs/databases.md`](docs/databases.md)
 for the FoldSeek DB layout and the **no-index / low-RAM** option.
 
@@ -70,11 +62,9 @@ for the FoldSeek DB layout and the **no-index / low-RAM** option.
 
 ## Quick start (shipped example, WebAPI search — no local DB needed)
 
-Two *Campylobacter* prophages ship in `example_data/genome_2campy/`. On a SLURM
-machine, after installing the env (above), the smoke test stages them and runs the
-pipeline end-to-end against the public FoldSeek web server (no database download),
-then checks the output (WebAPI mode removes the DB download, not the SLURM
-requirement):
+Two *Campylobacter* prophages ship in `example_data/genome_2campy/`. After installing
+the env (above), the smoke test stages them and runs the pipeline end-to-end against the
+public FoldSeek web server (no database download), then checks the output:
 
 ```bash
 cd phagefactor
@@ -108,8 +98,7 @@ sbatch steps/05_phynteny.sh
 #   04_output/curation/review_suggested.csv
 ```
 
-Set `SEARCH_MODE=webapi` to skip local FoldSeek DBs. Snakemake/Nextflow are optional —
-not required for v1.
+Set `SEARCH_MODE=webapi` to skip local FoldSeek DBs. Snakemake is a next planned step.
 
 ---
 
