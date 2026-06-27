@@ -1,7 +1,7 @@
 # phageFACTor
 
 **Structure-aware functional annotation of prophage (phage) genomes.**
-*FACT = Filter / Assign / Curate Tool.*
+*FACT = Functional Annotation and Curation Tool.*
 
 phageFACTor rescues the "hypothetical protein" fraction of prophage annotations by
 combining three evidence layers and reconciling them with an auditable curation
