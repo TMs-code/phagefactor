@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.ipynb_checkpoints/
+
+# Pipeline run outputs (regenerated; never commit)
+# Default run_base is <repo>/runs/ (versioned run/, run_002/, ...):
+runs/
+# legacy/direct-mode output dirs if run at repo root:
+00c_pharokka/
+01_phold/
+02_foldseek/
+03_comparison/
+04_output/
+05_phynteny/
+split/
+logs/
+
+# Local machine configs (carry personal paths/email — never commit)
+config_*.sh
+config/config_*.yaml
+env_*.sh
+!environment.yml
+
+# Runtime input (user-supplied data); keep the templates we ship
+input/*
+!input/overrides.tsv
+!input/prophage_list.txt
+!input/.gitkeep
+
+# Databases (large, machine-specific)
+databases/
+*_db/
+*.idx
+*.idx.*
+
+# Windows "mark of the web" sidecars (created when files are copied from Windows)
+*:Zone.Identifier
+
+# OS / editor
+.DS_Store
+*.swp
+*~
+
+# Keep example_data tracked — it IS the quick-start + smoke test
+!example_data/
+!example_data/**
+
+# Personal/debug artefacts (not part of the tool)
+CHANGELOG_*.md
+GIT_FIRST_COMMIT.md
+scripts/_pre_lexicon_backup/
+golden_baseline_*/
+*_for_review.csv
+
+# Web-mode caches (ESMFold structures + FoldSeek m8) — regenerated, can be large
+**/web_cache/
+
+# Personal debug/QA tools (not shipped)
+scripts/tools/probe_foldseek_api.py
+scripts/tools/check_golden_baseline.py
+scripts/tools/check_curation_consistency.py

@@ -1,0 +1,31 @@
+# phageFACTor environment
+#
+# Creates one env with pharokka + phold + foldseek (phold pulls a foldseek binary;
+# the same binary serves the custom-FoldSeek step). Phynteny Transformer is best
+# installed in its own env (pip) because of setuptools/sklearn pins — see docs.
+#
+#   micromamba env create -f environment.yml
+#   micromamba activate phagefactor
+#
+# Pin exact versions before publishing (record what your validated run used —
+# e.g. foldseek 10.941cd33 as seen in the citro run logs). Left loose here so the
+# solver can build on a fresh machine.
+name: phagefactor
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python>=3.10
+  - pharokka
+  - phold
+  - foldseek
+  - mmseqs2
+  - pandas
+  - biopython
+  - openpyxl
+  - pyyaml
+  - requests          # webAPI search mode (02w)
+  - diamond           # mode2 propagation (experimental)
+  # --- phynteny: install separately to avoid dependency clashes ---
+  # micromamba create -n phynteny python=3.10 && micromamba activate phynteny
+  # pip install -U 'setuptools<82' 'scikit-learn>=1.4' phynteny_transformer && install_models

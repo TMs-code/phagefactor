@@ -1,0 +1,72 @@
+<svg viewBox="0 0 1200 980" xmlns="http://www.w3.org/2000/svg" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif">
+<title>phageFACTor pipeline DAG</title>
+<desc>Three input modes (genome, protein, pangenome) converge on a shared FoldSeek to compare to curate to output spine; step 02 forks into local and webAPI search.</desc>
+<rect x="0" y="0" width="1200" height="980" fill="#ffffff"/>
+<defs>
+<marker id="ah" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#7a7873"/></marker>
+</defs>
+
+<text x="40" y="40" font-size="21" font-weight="700" fill="#26251f">phageFACTor — pipeline DAG</text>
+<text x="40" y="62" font-size="12.5" fill="#6f6d67">3 input modes · local vs webAPI search at step 02 · shared compare → curate → output spine</text>
+
+<rect x="450" y="82" width="300" height="46" rx="7" fill="#eef2f6" stroke="#9db4cb"/>
+<text x="600" y="102" font-size="13" font-weight="600" fill="#2b2b29" text-anchor="middle">detect_input_type.py</text>
+<text x="600" y="118" font-size="10.5" fill="#6f6d67" text-anchor="middle">auto: genome · protein · pangenome</text>
+
+<rect x="40" y="150" width="270" height="26" rx="13" fill="#35618e"/><text x="175" y="167" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">GENOME MODE</text>
+<rect x="345" y="150" width="270" height="26" rx="13" fill="#2c8078"/><text x="480" y="167" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">PROTEIN MODE</text>
+<rect x="650" y="150" width="270" height="26" rx="13" fill="#9a7420"/><text x="785" y="167" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">PANGENOME SUB-MODE</text>
+
+<path d="M520,128 L200,150" stroke="#7a7873" fill="none" marker-end="url(#ah)"/>
+<path d="M600,128 L490,150" stroke="#7a7873" fill="none" marker-end="url(#ah)"/>
+<path d="M690,128 L780,150" stroke="#7a7873" fill="none" marker-end="url(#ah)"/>
+
+<rect x="40" y="192" width="270" height="44" rx="7" fill="#f5f5f3" stroke="#c9c6bf"/><text x="175" y="210" font-size="12.5" font-weight="600" fill="#2b2b29" text-anchor="middle">00c pharokka (array)</text><text x="175" y="226" font-size="10.5" fill="#6f6d67" text-anchor="middle">Phanotate calls CDS fresh</text>
+<rect x="40" y="252" width="270" height="44" rx="7" fill="#f5f5f3" stroke="#c9c6bf"/><text x="175" y="270" font-size="12.5" font-weight="600" fill="#2b2b29" text-anchor="middle">01 phold (array)</text><text x="175" y="286" font-size="10.5" fill="#6f6d67" text-anchor="middle">3Di + PHROG annotation</text>
+<rect x="40" y="312" width="270" height="44" rx="7" fill="#f5f5f3" stroke="#c9c6bf"/><text x="175" y="336" font-size="12.5" font-weight="600" fill="#2b2b29" text-anchor="middle">01c merge (+01d 3Di)</text>
+<path d="M175,236 L175,252" stroke="#7a7873" marker-end="url(#ah)"/><path d="M175,296 L175,312" stroke="#7a7873" marker-end="url(#ah)"/>
+
+<rect x="345" y="192" width="270" height="44" rx="7" fill="#f5f5f3" stroke="#c9c6bf"/><text x="480" y="210" font-size="12.5" font-weight="600" fill="#2b2b29" text-anchor="middle">00p split</text><text x="480" y="226" font-size="10.5" fill="#6f6d67" text-anchor="middle">50 proteins / batch · all hypothetical</text>
+<rect x="345" y="252" width="270" height="44" rx="7" fill="#f5f5f3" stroke="#c9c6bf"/><text x="480" y="270" font-size="12.5" font-weight="600" fill="#2b2b29" text-anchor="middle">01p phold-proteins (array)</text><text x="480" y="286" font-size="10.5" fill="#6f6d67" text-anchor="middle">CPU default</text>
+<rect x="345" y="312" width="270" height="44" rx="7" fill="#f5f5f3" stroke="#c9c6bf"/><text x="480" y="336" font-size="12.5" font-weight="600" fill="#2b2b29" text-anchor="middle">01p merge</text>
+<path d="M480,236 L480,252" stroke="#7a7873" marker-end="url(#ah)"/><path d="M480,296 L480,312" stroke="#7a7873" marker-end="url(#ah)"/>
+
+<rect x="650" y="192" width="270" height="44" rx="7" fill="#fdf7ec" stroke="#d8b877"/><text x="785" y="210" font-size="12.5" font-weight="600" fill="#2b2b29" text-anchor="middle">00n translate</text><text x="785" y="226" font-size="10.5" fill="#6f6d67" text-anchor="middle">nt CDS → protein · clean pang_ ids</text>
+<rect x="650" y="312" width="270" height="44" rx="7" fill="#fdf7ec" stroke="#d8b877"/><text x="785" y="330" font-size="12.5" font-weight="600" fill="#2b2b29" text-anchor="middle">08 pangenome reference</text><text x="785" y="346" font-size="10.5" fill="#6f6d67" text-anchor="middle">rejoin → homology-ref set (after 04)</text>
+<path d="M785,236 C785,262 560,250 560,266" stroke="#9a7420" fill="none" stroke-dasharray="4 3" marker-end="url(#ah)"/>
+<text x="700" y="258" font-size="9.5" fill="#9a7420" font-style="italic">runs as protein mode</text>
+
+<path d="M175,356 C175,388 300,378 320,398" stroke="#7a7873" fill="none" marker-end="url(#ah)"/>
+<path d="M480,356 L480,398" stroke="#7a7873" marker-end="url(#ah)"/>
+
+<rect x="330" y="400" width="300" height="40" rx="7" fill="#eef2f6" stroke="#9db4cb"/><text x="480" y="425" font-size="13" font-weight="700" fill="#2b2b29" text-anchor="middle">02 · FoldSeek search (3Di)</text>
+<rect x="300" y="454" width="170" height="46" rx="7" fill="#f5f5f3" stroke="#c9c6bf"/><text x="385" y="472" font-size="11.5" font-weight="600" fill="#2b2b29" text-anchor="middle">02d local</text><text x="385" y="488" font-size="9.5" fill="#6f6d67" text-anchor="middle">PDB100 · AFDB-SS · AFDB50</text>
+<rect x="490" y="454" width="170" height="46" rx="7" fill="#f5f5f3" stroke="#c9c6bf"/><text x="575" y="472" font-size="11.5" font-weight="600" fill="#2b2b29" text-anchor="middle">02w webAPI *</text><text x="575" y="488" font-size="9.5" fill="#6f6d67" text-anchor="middle">experimental · no local DB</text>
+<path d="M430,440 L400,454" stroke="#7a7873" marker-end="url(#ah)"/><path d="M530,440 L560,454" stroke="#7a7873" marker-end="url(#ah)"/>
+
+<rect x="330" y="516" width="300" height="46" rx="7" fill="#eef2f6" stroke="#9db4cb"/><text x="480" y="534" font-size="12.5" font-weight="600" fill="#2b2b29" text-anchor="middle">foldseek_scoring → best_hit / top3</text><text x="480" y="550" font-size="10" fill="#6f6d67" text-anchor="middle">confidence tiers · phage boost · promiscuous filters</text>
+<path d="M385,500 C385,510 460,510 470,516" stroke="#7a7873" fill="none" marker-end="url(#ah)"/><path d="M575,500 C575,510 500,510 490,516" stroke="#7a7873" fill="none" marker-end="url(#ah)"/>
+
+<rect x="330" y="578" width="300" height="46" rx="7" fill="#eef2f6" stroke="#9db4cb"/><text x="480" y="596" font-size="12.5" font-weight="600" fill="#2b2b29" text-anchor="middle">03 compare</text><text x="480" y="612" font-size="10" fill="#6f6d67" text-anchor="middle">phold ⟷ FS · sub-DBs · agreement · euka demote</text>
+<path d="M480,562 L480,578" stroke="#7a7873" marker-end="url(#ah)"/>
+
+<rect x="330" y="640" width="300" height="46" rx="7" fill="#eef2f6" stroke="#9db4cb"/><text x="480" y="658" font-size="12.5" font-weight="600" fill="#2b2b29" text-anchor="middle">04 curate</text><text x="480" y="674" font-size="10" fill="#6f6d67" text-anchor="middle">rule tree · CONFIDENT→WEAK tiers · promiscuous cap</text>
+<path d="M480,624 L480,640" stroke="#7a7873" marker-end="url(#ah)"/>
+
+<rect x="330" y="702" width="300" height="46" rx="7" fill="#e9efe9" stroke="#8fae8f"/><text x="480" y="720" font-size="12.5" font-weight="600" fill="#2b2b29" text-anchor="middle">05 build output</text><text x="480" y="736" font-size="10" fill="#6f6d67" text-anchor="middle">final_annotations_table + GBK + review_suggested</text>
+<path d="M480,686 L480,702" stroke="#7a7873" marker-end="url(#ah)"/>
+
+<rect x="680" y="640" width="240" height="46" rx="7" fill="#f5f5f3" stroke="#c9c6bf" stroke-dasharray="5 3"/><text x="800" y="658" font-size="12" font-weight="600" fill="#2b2b29" text-anchor="middle">05_phynteny (opt · genome)</text><text x="800" y="674" font-size="9.5" fill="#6f6d67" text-anchor="middle">06 phynteny + 07 C1/Cro synteny</text>
+<path d="M630,655 C650,655 660,663 678,663" stroke="#7a7873" fill="none" stroke-dasharray="5 3" marker-end="url(#ah)"/>
+
+
+<rect x="40" y="820" width="1120" height="120" rx="8" fill="#faf9f7" stroke="#e2e0da"/>
+<text x="58" y="844" font-size="12" font-weight="700" fill="#26251f">Legend</text>
+<rect x="58" y="856" width="22" height="14" rx="7" fill="#35618e"/><text x="88" y="867" font-size="11" fill="#3f3d37">Genome mode lane</text>
+<rect x="230" y="856" width="22" height="14" rx="7" fill="#2c8078"/><text x="260" y="867" font-size="11" fill="#3f3d37">Protein mode lane</text>
+<rect x="410" y="856" width="22" height="14" rx="7" fill="#9a7420"/><text x="440" y="867" font-size="11" fill="#3f3d37">Pangenome sub-mode</text>
+<rect x="600" y="856" width="22" height="14" rx="4" fill="#eef2f6" stroke="#9db4cb"/><text x="630" y="867" font-size="11" fill="#3f3d37">Shared spine (all modes)</text>
+<line x1="58" y1="892" x2="90" y2="892" stroke="#7a7873" stroke-dasharray="5 3"/><text x="98" y="896" font-size="11" fill="#3f3d37">dashed = optional / mode-specific</text>
+<text x="360" y="896" font-size="11" fill="#6f6d67">Pangenome skips phynteny/synteny (no genome coordinates). Step 02 fork: pick local OR webAPI; both feed the identical scoring path.</text>
+<text x="58" y="914" font-size="11" fill="#6f6d67">* 02w webAPI is EXPERIMENTAL: search.foldseek.com accepts structures only, so it needs an ESMFold fold step and is subject to server-side rate limits / 504s.</text>
+</svg>
