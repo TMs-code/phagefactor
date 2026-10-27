@@ -37,7 +37,7 @@
 #       --table 11 --prefix pang_
 #
 # It writes input/.input_type = "protein" next to the fasta/ dir automatically
-# (unless --no-input-type), so submit_all.sh's auto-detector is bypassed.
+# (unless --no-input-type, which the workflow uses).
 # =============================================================================
 
 import argparse

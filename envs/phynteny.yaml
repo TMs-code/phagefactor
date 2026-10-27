@@ -1,0 +1,16 @@
+# Phynteny Transformer environment (separate: torch + setuptools/scikit-learn pins
+# clash with the tool env). Created by `phagefactor install-envs`, which also
+# downloads the models (install_models).
+name: phynteny
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.10
+  - biopython
+  - pandas
+  - pip
+  - pip:
+      - "setuptools<82"          # pkg_resources, needed by install_models
+      - "scikit-learn>=1.4"      # built against numpy 2 (torch pulls numpy 2)
+      - phynteny_transformer

@@ -4,37 +4,33 @@
 #
 # Runs the pipeline on the 2 Campylobacter prophages and verifies the output
 # table is produced with the expected schema and a plausible annotated fraction.
-# Uses WebAPI search mode by default so NO local FoldSeek database is needed.
+# Uses the two small local FoldSeek databases (search_mode=webapi needs none).
 #
-# Requires the 'pharokka' env (phold + foldseek + pharokka) — see steps/00_install_env.sh.
-# Usage:  bash example_data/run_smoke_test.sh
+# Needs the tools (phagefactor install-envs), snakemake, and the small databases
+# (phagefactor databases --pharokka --pdb100 --swissprot).
+# Usage:  bash example_data/run_smoke_test.sh [project_dir]   (default: ./pf_smoke)
 # =============================================================================
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(dirname "${HERE}")"
-cd "${ROOT}"
+PF="${HERE}/../bin/phagefactor"
+PROJ="${1:-pf_smoke}"
 
-# fail early with a useful message rather than deep inside step 02
-python3 scripts/tools/check_databases.py >/dev/null 2>&1 || true
-echo "[smoke] staging genome_2campy into input/"
-mkdir -p input/fasta
-cp -f example_data/genome_2campy/input/fasta/*.fasta input/fasta/
-cp -f example_data/genome_2campy/input/prophage_list.txt input/ 2>/dev/null || true
-rm -f input/.input_type
+echo "[smoke] project ${PROJ} with the genome_2campy example"
+"${PF}" init "${PROJ}" >/dev/null
+cp -f "${HERE}"/genome_2campy/input/fasta/*.fasta "${PROJ}/input/fasta/"
+cp -f "${HERE}"/genome_2campy/input/prophage_list.txt "${PROJ}/input/"
+cd "${PROJ}"
 
-echo "[smoke] running pipeline (no SLURM, on-disk DBs)"
-# run_local.sh, not submit_all.sh: submit_all sbatches every step.
-# Uses the two small FoldSeek DBs; afdb50 is not needed for a smoke test.
+# the two small FoldSeek DBs; afdb50 is not needed for a smoke test
 : "${SMOKE_DBS:=afdb-swissprot pdb100}"
-FOLDSEEK_DBS="${SMOKE_DBS}" SEARCH_MODE="${SEARCH_MODE:-local}" bash run_local.sh || {
-  echo "[smoke] run_local failed — the real error is ABOVE this line."
-  echo "        Check databases with: python scripts/tools/check_databases.py"
-  echo "        Install the small set : bash steps/00b_setup_databases.sh --pharokka --pdb100 --swissprot"
+"${PF}" run --config foldseek_dbs="${SMOKE_DBS}" search_mode="${SEARCH_MODE:-local}" || {
+  echo "[smoke] run failed — the real error is ABOVE this line."
+  echo "        Check databases with: ${PF} check"
+  echo "        Install the small set: ${PF} databases --pharokka --phold --pdb100 --swissprot"
   exit 1
 }
 
-# outputs now live in the versioned run dir; follow the pointer submit_all wrote
-RUN_DIR="${PHAGEFACTOR_RUN_DIR:-$(cat runs/.current_run 2>/dev/null || echo runs/run)}"
+RUN_DIR="$("${PF}" where | sed -n 's/^RUN_DIR=//p')"
 TABLE="${RUN_DIR}/04_output/final_annotations_table.csv"
 echo "[smoke] checking ${TABLE}"
 test -f "${TABLE}" || { echo "FAIL: ${TABLE} not produced"; exit 1; }

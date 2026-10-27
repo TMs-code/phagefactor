@@ -15,7 +15,7 @@ Detection rules (applied in order):
      and no protein-specific amino acids are present → default to genome.
 
 The detected mode is printed to stdout AND written to --output (default
-input/.input_type) so submit_all.sh can cache the result across runs.
+input/.input_type; the workflow passes --redetect --output /dev/null).
 
 Usage:
   python scripts/lib/detect_input_type.py                        # auto-finds input/fasta/
@@ -133,7 +133,7 @@ def detect(fasta_dir: Path, verbose: bool = False) -> str:
     # MANY short nucleotide-only records = a pan-genome / bulk CDS set, NOT a set
     # of prophage genomes. Return the dedicated "pangenome" mode (instead of
     # silently picking genome mode and Phanotate-recalling each record);
-    # submit_all.sh then translates it to protein and runs protein mode.
+    # the workflow then translates it to protein and runs protein mode.
     if (votes["protein"] == 0
             and len(nuc_short_lens) >= PANGENOME_MIN_RECORDS
             and (sum(nuc_short_lens) / len(nuc_short_lens)) <= PANGENOME_MAX_MEAN_LEN):
@@ -141,9 +141,9 @@ def detect(fasta_dir: Path, verbose: bool = False) -> str:
         print(
             f"INFO: input/fasta/ is a BULK NUCLEOTIDE CDS set / pan-genome "
             f"({len(nuc_short_lens)} short nucleotide records, mean {mean_len:.0f} nt), "
-            "not per-prophage genomes -> 'pangenome' mode. submit_all.sh translates it "
+            "not per-prophage genomes -> 'pangenome' mode. The workflow translates it "
             "to protein (00n_translate_pangenome.py) then runs protein mode. "
-            "Override with --force genome|protein or INPUT_MODE=.",
+            "Override with --force genome|protein or --config input_mode=.",
             file=sys.stderr,
         )
         return "pangenome"

@@ -1,0 +1,19 @@
+# Tool environment: pharokka + phold + foldseek and the Python libraries of the
+# analysis scripts. Created by `phagefactor install-envs` (or:
+#   micromamba env create -f envs/phagefactor.yaml).
+# A Bioconda install of phageFACTor already contains all of this.
+name: phagefactor
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python>=3.10
+  - pharokka
+  - phold
+  - foldseek
+  - mmseqs2
+  - pandas
+  - biopython
+  - openpyxl
+  - pyyaml
+  - requests          # search_mode=webapi

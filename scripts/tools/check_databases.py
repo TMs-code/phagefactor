@@ -3,10 +3,10 @@
 check_databases.py -- inventory which databases are installed, and what each
 one unlocks. Run it before a DB download so you only fetch what is missing.
 
-  python scripts/tools/check_databases.py
+  phagefactor check            (or: python scripts/tools/check_databases.py)
 
-Paths follow config.sh / config.py, so PHAGEFACTOR_DB_ROOT, PHAROKKA_DB and
-FOLDSEEK_DB_ROOT are all honoured.
+Paths follow scripts/lib/config.py, so PHAGEFACTOR_DB_ROOT, PHAROKKA_DB,
+FOLDSEEK_DB_ROOT and the location recorded by `phagefactor databases` are honoured.
 """
 import os
 import sys
@@ -62,6 +62,8 @@ def main():
          "curated SwissProt AFDB", "--swissprot"),
         ("afdb50", fs_root / "afdb50_db", fs_root / "afdb50_db" / "afdb50", "~40-60 GB",
          "THE important one: ~91% of FoldSeek-derived calls", "--afdb50"),
+        ("taxdump", Path(C.TAXDUMP_DIR), Path(C.TAXDUMP_DIR) / "nodes.dmp", "~250 MB",
+         "hit domain without a FoldSeek lineage (webapi mode, older runs)", "--taxdump"),
     ]
 
     print(f"  {'database':<16}{'status':<12}{'size':>10}   unlocks")
@@ -92,14 +94,14 @@ def main():
         print("\n  Laptop-friendly set (~5.5 GB for the two FoldSeek DBs) — enough for a")
         print("  full reproducible run, though pdb100+swissprot supplied only ~9% of")
         print("  hits in our 17-phage benchmark:")
-        print(f"    bash steps/00b_setup_databases.sh {' '.join(small)}")
+        print(f"    phagefactor databases {' '.join(small)}")
     if any(n == "afdb50" for n, _, _ in missing):
         print("\n  afdb50 is where the annotations actually come from, but it is 40-60 GB")
         print("  and its index wants a fat-memory node. Cluster only:")
-        print("    bash steps/00b_setup_databases.sh --afdb50")
-        print("    sbatch --mem=200G --time=04:00:00 steps/00b_setup_databases.sh --index")
+        print("    phagefactor databases --afdb50")
+        print('    sbatch --mem=200G --time=04:00:00 --wrap "phagefactor databases --index"')
     print("\n  Restrict a run to the DBs you have:")
-    print('    FOLDSEEK_DBS="afdb-swissprot pdb100" SEARCH_MODE=local bash run_local.sh')
+    print('    phagefactor run --config foldseek_dbs="afdb-swissprot pdb100"')
     return 0
 
 

@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__PF_TITLE__</title>
+<style>
+:root {
+  color-scheme: light;
+  --surface-0: #f5f4f1; --surface-1: #fcfcfb; --surface-2: #f0efec;
+  --border: #dddcd6; --grid: #e7e6e1;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #77766f;
+  --accent: #2a78d6; --focus: #2a78d6;
+  --c-head: #2a78d6; --c-connector: #eb6834; --c-tail: #1baf7a; --c-lysis: #eda100;
+  --c-integration: #e87ba4; --c-regulation: #008300; --c-dna: #6250d6; --c-moron: #e34948;
+  --c-other: #9b9a94; --c-unknown: #d4d3cd;
+  --review: #d03b3b; --good: #0ca30c;
+  --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-0: #121211; --surface-1: #1a1a19; --surface-2: #232321;
+    --border: #383835; --grid: #2c2c2a;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #9a998f;
+    --accent: #3987e5; --focus: #6da7ec;
+    --c-head: #3987e5; --c-connector: #d95926; --c-tail: #199e70; --c-lysis: #c98500;
+    --c-integration: #d55181; --c-regulation: #008300; --c-dna: #9085e9; --c-moron: #e66767;
+    --c-other: #77766f; --c-unknown: #4a4a46;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-0: #121211; --surface-1: #1a1a19; --surface-2: #232321;
+  --border: #383835; --grid: #2c2c2a;
+  --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #9a998f;
+  --accent: #3987e5; --focus: #6da7ec;
+  --c-head: #3987e5; --c-connector: #d95926; --c-tail: #199e70; --c-lysis: #c98500;
+  --c-integration: #d55181; --c-regulation: #008300; --c-dna: #9085e9; --c-moron: #e66767;
+  --c-other: #77766f; --c-unknown: #4a4a46;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.35);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--surface-0); color: var(--text-primary);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+.wrap { max-width: 1400px; margin: 0 auto; padding: 20px 16px 48px; }
+header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; justify-content: space-between; }
+h1 { font-size: 22px; margin: 0; letter-spacing: -.01em; }
+h1 span { color: var(--text-muted); font-weight: 400; }
+.sub { color: var(--text-secondary); font-size: 13px; overflow-wrap: anywhere; }
+.btn {
+  border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary);
+  border-radius: 8px; padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer;
+}
+.btn:hover { background: var(--surface-2); }
+.btn:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 16px 0; }
+.tile { padding: 12px 14px; }
+.tile .v { font-size: 24px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.tile .l { color: var(--text-secondary); font-size: 12.5px; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; margin-bottom: 10px; }
+.controls input[type=search] { flex: 1 1 220px; min-width: 0; }
+input[type=search], select {
+  border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary);
+  border-radius: 8px; padding: 5px 8px; font: inherit; font-size: 13px; max-width: 100%;
+}
+label.chk { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--text-secondary); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px; margin-bottom: 10px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary);
+  font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.chip .n { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.chip.off { opacity: .45; }
+.chip.on { border-color: var(--text-secondary); }
+.sw { width: 12px; height: 12px; border-radius: 3px; flex: none; display: inline-block; }
+.legend .hint { color: var(--text-muted); font-size: 12px; align-self: center; margin-left: 4px; }
+.maps { padding: 8px 0 4px; margin-bottom: 10px; }
+.maps-head { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 4px 12px 6px; flex-wrap: wrap; }
+.maps-head .note { color: var(--text-muted); font-size: 12px; }
+.track { padding: 4px 12px 8px; }
+.track h3 { font-size: 13px; margin: 6px 0 2px; font-weight: 600; }
+.track h3 span { color: var(--text-muted); font-weight: 400; }
+.scroller { overflow-x: auto; overflow-y: hidden; }
+svg.map { display: block; }
+svg.map .gene { cursor: pointer; }
+svg.map .gene path { stroke: var(--surface-1); stroke-width: 1; }
+svg.map .gene.dim { opacity: .18; }
+svg.map .gene.sel path { stroke: var(--text-primary); stroke-width: 2; }
+svg.map .gene.rev path { }
+svg.map text.lbl { font-size: 10.5px; fill: var(--text-secondary); pointer-events: none; }
+svg.map text.tick { font-size: 10px; fill: var(--text-muted); }
+svg.map line.axis, svg.map line.tk { stroke: var(--grid); }
+svg.map .rv { fill: var(--review); }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 10px; align-items: start; }
+@media (max-width: 980px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+.tablecard { overflow: hidden; }
+.tablebar { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.tablebar .cnt { color: var(--text-secondary); font-size: 13px; }
+.tablewrap { max-height: 640px; overflow: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead th {
+  position: sticky; top: 0; background: var(--surface-2); color: var(--text-secondary);
+  text-align: left; font-weight: 600; font-size: 12px; padding: 7px 8px; border-bottom: 1px solid var(--border);
+  cursor: pointer; white-space: nowrap; user-select: none;
+}
+thead th .ar { color: var(--text-muted); }
+tbody td { padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: var(--surface-2); }
+tbody tr.sel { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+td.mono, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+td .fn { display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
+.badge { display: inline-block; font-size: 11.5px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-secondary); white-space: nowrap; }
+.badge.rev { border-color: var(--review); color: var(--review); }
+.detail { padding: 14px 16px; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
+.detail h2 { font-size: 17px; margin: 0 0 4px; overflow-wrap: anywhere; }
+.detail .lt { color: var(--text-muted); font-size: 12.5px; overflow-wrap: anywhere; }
+.detail .row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.detail h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin: 14px 0 6px; }
+.detail dl { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 3px 10px; margin: 0; font-size: 13px; }
+.detail dt { color: var(--text-secondary); }
+.detail dd { margin: 0; overflow-wrap: anywhere; }
+.detail .why { font-size: 13px; color: var(--text-primary); background: var(--surface-2); border-radius: 8px; padding: 8px 10px; overflow-wrap: anywhere; }
+.detail ol { margin: 0; padding-left: 20px; font-size: 13px; }
+.detail ol li { margin: 2px 0; overflow-wrap: anywhere; }
+.detail .empty { color: var(--text-muted); font-size: 13px; }
+a { color: var(--accent); }
+#tip {
+  position: fixed; z-index: 10; pointer-events: none; max-width: 320px;
+  background: var(--surface-1); color: var(--text-primary); border: 1px solid var(--border);
+  border-radius: 8px; box-shadow: var(--shadow); padding: 7px 9px; font-size: 12.5px; display: none;
+}
+#tip b { display: block; margin-bottom: 2px; }
+#tip .m { color: var(--text-secondary); }
+footer { color: var(--text-muted); font-size: 12px; margin-top: 18px; overflow-wrap: anywhere; }
+@media print { .controls, .btn { display: none; } .tablewrap { max-height: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>phageFACTor <span>report</span></h1>
+      <div class="sub" id="runinfo"></div>
+    </div>
+    <div style="display:flex; gap:8px">
+      <button class="btn" id="theme" type="button" title="Switch light / dark">Theme</button>
+    </div>
+  </header>
+
+  <section class="tiles" id="tiles" aria-label="Summary"></section>
+
+  <section class="card controls" aria-label="Filters">
+    <input type="search" id="q" placeholder="Search product, locus tag, FoldSeek / PHold hit…" aria-label="Search">
+    <select id="fProphage" aria-label="Prophage"></select>
+    <select id="fSource" aria-label="Annotation source"></select>
+    <select id="fConf" aria-label="FoldSeek confidence"></select>
+    <label class="chk"><input type="checkbox" id="fReview"> Needs review only</label>
+    <label class="chk"><input type="checkbox" id="fHypo"> Hypothetical in input only</label>
+    <button class="btn" id="reset" type="button">Reset</button>
+  </section>
+
+  <section class="card legend" id="legend" aria-label="Function categories (click to filter)"></section>
+
+  <section class="card maps" aria-label="Genome maps">
+    <div class="maps-head">
+      <div class="note" id="mapnote"></div>
+      <div style="display:flex; gap:6px">
+        <button class="btn" id="zout" type="button" title="Zoom out">−</button>
+        <button class="btn" id="zfit" type="button" title="Fit to width">Fit</button>
+        <button class="btn" id="zin" type="button" title="Zoom in">+</button>
+      </div>
+    </div>
+    <div id="tracks"></div>
+  </section>
+
+  <div class="layout">
+    <section class="card tablecard" aria-label="Genes">
+      <div class="tablebar">
+        <div class="cnt" id="cnt"></div>
+        <button class="btn" id="csv" type="button">Export visible rows (CSV)</button>
+      </div>
+      <div class="tablewrap"><table id="tbl"><thead></thead><tbody></tbody></table></div>
+    </section>
+    <aside class="card detail" id="detail" aria-live="polite"></aside>
+  </div>
+  <footer id="foot"></footer>
+</div>
+<div id="tip" role="tooltip"></div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <pattern id="hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+    <rect width="5" height="5" fill="var(--c-moron)"/><rect width="2" height="5" fill="var(--surface-1)"/></pattern>
+</defs></svg>
+
+<script>
+const PF = /*__PF_DATA__*/null;
+(function () {
+  "use strict";
+  const M = PF.meta, G = PF.genes;
+  // ---------------------------------------------------------------- categories
+  // 8 validated hues in fixed order, assigned in genome-module order; defense is
+  // a moron subclass (PHROG) -> moron hue + hatch; other/unknown are neutrals.
+  const CATS = [
+    ["head and packaging", "--c-head", "head & packaging"],
+    ["connector", "--c-connector", "connector"],
+    ["tail", "--c-tail", "tail"],
+    ["lysis", "--c-lysis", "lysis"],
+    ["integration and excision", "--c-integration", "integration & excision"],
+    ["transcription regulation", "--c-regulation", "transcription regulation"],
+    ["DNA, RNA and nucleotide metabolism", "--c-dna", "DNA/RNA metabolism"],
+    ["moron, auxiliary metabolic gene and host takeover", "--c-moron", "moron / AMG / host takeover"],
+    ["defense", "--c-moron", "defense", true],
+    ["other", "--c-other", "other"],
+    ["unknown function", "--c-unknown", "unknown function"],
+  ];
+  const CAT = Object.fromEntries(CATS.map(c => [c[0], {v: c[1], label: c[2], hatch: !!c[3]}]));
+  const catOf = g => CAT[g.final_function] ? g.final_function : (g.final_function ? "other" : "unknown function");
+  const fill = c => CAT[c].hatch ? "url(#hatch)" : `var(${CAT[c].v})`;
+  const swatch = c => CAT[c].hatch
+    ? `<span class="sw" style="background:repeating-linear-gradient(135deg,var(--c-moron) 0 3px,var(--surface-1) 3px 5px)"></span>`
+    : `<span class="sw" style="background:var(${CAT[c].v})"></span>`;
+
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+  const yes = v => /^(true|1|yes)$/i.test(String(v || ""));
+  const num = v => { const x = parseFloat(v); return Number.isFinite(x) ? x : null; };
+  const fmtE = v => { const x = num(v); return x === null ? "" : (x === 0 ? "0" : x < 0.001 ? x.toExponential(1) : String(+x.toPrecision(3))); };
+  const name = g => g.final_product || "hypothetical protein";
+  const shortName = g => g.short_name || g.final_product || "";
+
+  // ---------------------------------------------------------------- state
+  const S = {q: "", prophage: "", source: "", conf: "", review: false, hypo: false,
+             cats: new Set(), sort: {k: "_i", d: 1}, sel: null, zoom: null};
+  try { const t = localStorage.getItem("pf-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+
+  const $ = id => document.getElementById(id);
+  const uniq = k => [...new Set(G.map(g => g[k]).filter(Boolean))];
+
+  // ---------------------------------------------------------------- header
+  $("runinfo").innerHTML = (M.title && M.title !== "phageFACTor report" ? `<b>${esc(M.title)}</b> · ` : "") + `${esc(M.run)} · ${esc(M.mode)} mode · ${M.n} genes · generated ${esc(M.generated)}`;
+  $("foot").innerHTML = `Source table: <span class="mono">${esc(M.table)}</span>. ` +
+    (M.has_phynteny ? "Includes phynteny categories and synteny hints. " : "") +
+    `Gene coordinates: ${M.has_coords ? "GenBank" : "none (genes in input order, length from protein length)"}.`;
+
+  function opts(sel, label, values) {
+    sel.innerHTML = `<option value="">${label}</option>` + values.map(v => `<option>${esc(v)}</option>`).join("");
+  }
+  opts($("fProphage"), "All prophages", uniq("prophage"));
+  opts($("fSource"), "All sources", uniq("annotation_source").sort());
+  opts($("fConf"), "Any FoldSeek confidence", ["CONFIDENT", "GOOD", "BORDERLINE", "WEAK", "NO_HIT"].filter(v => G.some(g => g.fs_confidence === v)));
+
+  // ---------------------------------------------------------------- filter
+  function matches(g, ignoreCats) {
+    if (S.prophage && g.prophage !== S.prophage) return false;
+    if (S.source && g.annotation_source !== S.source) return false;
+    if (S.conf && g.fs_confidence !== S.conf) return false;
+    if (S.review && !yes(g.needs_review)) return false;
+    if (S.hypo && !yes(g.was_hypothetical)) return false;
+    if (!ignoreCats && S.cats.size && !S.cats.has(catOf(g))) return false;
+    if (S.q) {
+      const hay = [g.locus_tag, g.short_name, g.final_product, g.fs_description, g.phold_product,
+                   g.pharokka_product, g.fs_top3, g.curation_explanation, g.fs_taxname].join(" ").toLowerCase();
+      if (!S.q.split(/\s+/).every(t => hay.includes(t))) return false;
+    }
+    return true;
+  }
+
+  // ---------------------------------------------------------------- tiles
+  function tiles() {
+    const v = G.filter(g => matches(g));
+    const ann = v.filter(g => (g.final_product || "").toLowerCase() !== "hypothetical protein" && g.final_product).length;
+    const rev = v.filter(g => yes(g.needs_review)).length;
+    const conf = v.filter(g => g.fs_confidence === "CONFIDENT").length;
+    const pro = new Set(v.map(g => g.prophage)).size;
+    const pct = v.length ? Math.round(100 * ann / v.length) : 0;
+    $("tiles").innerHTML = [
+      [v.length, `genes${v.length !== G.length ? " (filtered)" : ""}`],
+      [pro, "prophages"],
+      [`${pct}%`, `annotated (${ann})`],
+      [conf, "CONFIDENT FoldSeek hits"],
+      [rev, "flagged for review"],
+    ].map(([a, b]) => `<div class="card tile"><div class="v">${a}</div><div class="l">${b}</div></div>`).join("");
+  }
+
+  // ---------------------------------------------------------------- legend
+  function legend() {
+    const base = G.filter(g => matches(g, true));
+    const cnt = {}; base.forEach(g => { const c = catOf(g); cnt[c] = (cnt[c] || 0) + 1; });
+    $("legend").innerHTML = CATS.filter(c => cnt[c[0]]).map(c => {
+      const st = S.cats.size ? (S.cats.has(c[0]) ? "on" : "off") : "";
+      return `<button class="chip ${st}" data-cat="${esc(c[0])}" type="button" aria-pressed="${S.cats.has(c[0])}">${swatch(c[0])}${esc(c[2])} <span class="n">${cnt[c[0]]}</span></button>`;
+    }).join("") + `<span class="hint">Click categories to filter${S.cats.size ? " · <a href='#' id='allcats'>show all</a>" : ""}</span>`;
+    $("legend").querySelectorAll(".chip").forEach(b => b.onclick = () => {
+      const c = b.dataset.cat; S.cats.has(c) ? S.cats.delete(c) : S.cats.add(c); render();
+    });
+    const a = $("allcats"); if (a) a.onclick = e => { e.preventDefault(); S.cats.clear(); render(); };
+  }
+
+  // ---------------------------------------------------------------- maps
+  const byContig = {};
+  G.forEach(g => (byContig[g._contig] ||= []).push(g));
+  const contigLen = Object.fromEntries(M.contigs.map(c => [c.id, c.length]));
+  const contigProphage = c => byContig[c][0].prophage || c;
+
+  function fitScale() {
+    const w = Math.max(320, $("tracks").clientWidth - 24);
+    const lens = Object.keys(byContig).filter(c => !S.prophage || contigProphage(c) === S.prophage)
+      .map(c => contigLen[c] || Math.max(...byContig[c].map(g => g._end)));
+    return w / (Math.max(...lens, 1000) / 1000);
+  }
+
+  function maps() {
+    const px = S.zoom ?? fitScale(), k = px / 1000;
+    $("mapnote").textContent = M.has_coords
+      ? "Arrows show strand. Click a gene for its evidence."
+      : "No GenBank for this run: genes are drawn in input order, sized by protein length (no strand).";
+    const html = [];
+    for (const c of Object.keys(byContig)) {
+      const gs = byContig[c];
+      if (S.prophage && contigProphage(c) !== S.prophage) continue;
+      const L = contigLen[c] || Math.max(...gs.map(g => g._end));
+      const W = Math.ceil(L * k) + 40, H = 78, y = 34, h = 16;
+      let s = `<svg class="map" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Genome map ${esc(c)}">`;
+      // ruler
+      const stepKb = [1, 2, 5, 10, 20, 50, 100, 200, 500].find(st => st * px >= 70) || 1000;
+      s += `<line class="axis" x1="12" x2="${12 + L * k}" y1="${y + h + 12}" y2="${y + h + 12}"/>`;
+      for (let kb = 0; kb * 1000 <= L; kb += stepKb) {
+        const x = 12 + kb * 1000 * k;
+        s += `<line class="tk" x1="${x}" x2="${x}" y1="${y + h + 9}" y2="${y + h + 15}"/><text class="tick" x="${x}" y="${y + h + 27}" text-anchor="middle">${M.has_coords ? kb + " kb" : ""}</text>`;
+      }
+      // genes + greedy labels (no overlap)
+      let lastLabelEnd = -1e9;
+      const sorted = gs.slice().sort((a, b) => a._start - b._start);
+      for (const g of sorted) {
+        const x0 = 12 + (g._start - 1) * k, x1 = 12 + g._end * k, w = Math.max(x1 - x0, 1.5);
+        const head = Math.min(6, w * 0.5);
+        let d;
+        if (g._strand === 1) d = `M${x0},${y} H${x0 + w - head} L${x0 + w},${y + h / 2} L${x0 + w - head},${y + h} H${x0} Z`;
+        else if (g._strand === -1) d = `M${x0 + w},${y} H${x0 + head} L${x0},${y + h / 2} L${x0 + head},${y + h} H${x0 + w} Z`;
+        else d = `M${x0},${y} h${w} v${h} h${-w} Z`;
+        const on = matches(g), sel = S.sel === g._i;
+        s += `<g class="gene${on ? "" : " dim"}${sel ? " sel" : ""}" data-i="${g._i}" tabindex="0"><path d="${d}" fill="${fill(catOf(g))}"/>` +
+             (yes(g.needs_review) ? `<circle class="rv" cx="${x0 + w / 2}" cy="${y + h + 5}" r="2.2"/>` : "") + `</g>`;
+        const lbl = shortName(g);
+        if (on && lbl && !/^hypothetical/i.test(lbl)) {
+          const tw = Math.min(lbl.length, 22) * 5.6;
+          const cx = Math.min(Math.max(x0 + w / 2, 2 + tw / 2), W - 2 - tw / 2);   // keep inside the map
+          if (cx - tw / 2 > lastLabelEnd + 4 && w > 10) {
+            s += `<text class="lbl" x="${cx}" y="${y - 6}" text-anchor="middle">${esc(lbl.length > 22 ? lbl.slice(0, 21) + "…" : lbl)}</text>`;
+            lastLabelEnd = cx + tw / 2;
+          }
+        }
+      }
+      s += `</svg>`;
+      const n = gs.filter(g => matches(g)).length;
+      html.push(`<div class="track"><h3>${esc(contigProphage(c))}${c !== contigProphage(c) ? ` <span>${esc(c)}</span>` : ""} <span>· ${(L / 1000).toFixed(1)} kb · ${gs.length} genes${n !== gs.length ? ` (${n} shown)` : ""}</span></h3><div class="scroller">${s}</div></div>`);
+    }
+    $("tracks").innerHTML = html.join("") || `<div class="track empty">No prophage matches the filters.</div>`;
+    $("tracks").querySelectorAll(".gene").forEach(el => {
+      const g = G[+el.dataset.i];
+      el.onmouseenter = e => tip(e, g); el.onmousemove = e => tip(e, g); el.onmouseleave = () => tipHide();
+      el.onclick = () => select(g._i, "map");
+      el.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(g._i, "map"); } };
+    });
+  }
+
+  // ---------------------------------------------------------------- tooltip
+  function tip(e, g) {
+    const t = $("tip");
+    t.innerHTML = `<b>${esc(name(g))}</b><div class="m">${esc(g.locus_tag)} · ${esc(CAT[catOf(g)].label)}</div>` +
+      `<div class="m">${esc(g.annotation_source || "")}${g.fs_confidence ? " · FoldSeek " + esc(g.fs_confidence) : ""}${yes(g.needs_review) ? " · needs review" : ""}</div>` +
+      (M.has_coords ? `<div class="m">${g._start.toLocaleString()}–${g._end.toLocaleString()} (${g._strand === 1 ? "+" : "−"})</div>` : "");
+    t.style.display = "block";
+    const r = t.getBoundingClientRect();
+    let x = e.clientX + 14, y = e.clientY + 14;
+    if (x + r.width > innerWidth - 8) x = e.clientX - r.width - 14;
+    if (y + r.height > innerHeight - 8) y = e.clientY - r.height - 14;
+    t.style.left = x + "px"; t.style.top = y + "px";
+  }
+  function tipHide() { $("tip").style.display = "none"; }
+
+  // ---------------------------------------------------------------- table
+  const COLS = [
+    ["prophage", "Prophage"], ["locus_tag", "Locus tag", "mono"], ["short_name", "Short name"],
+    ["final_product", "Final product"], ["final_function", "Function"], ["annotation_source", "Source"],
+    ["fs_confidence", "FoldSeek"], ["phold_confidence", "PHold"], ["needs_review", "Review"],
+  ];
+  const CONF_RANK = {CONFIDENT: 4, GOOD: 3, BORDERLINE: 2, WEAK: 1, NO_HIT: 0, high: 3, medium: 2, low: 1};
+  function visible() {
+    const v = G.filter(g => matches(g));
+    const {k, d} = S.sort;
+    v.sort((a, b) => {
+      let x = a[k], y = b[k];
+      if (k === "_i") return (x - y) * d;
+      if (k === "fs_confidence" || k === "phold_confidence") { x = CONF_RANK[x] ?? -1; y = CONF_RANK[y] ?? -1; return (x - y) * d; }
+      return String(x || "").localeCompare(String(y || ""), undefined, {numeric: true}) * d;
+    });
+    return v;
+  }
+  function table() {
+    $("tbl").tHead.innerHTML = "<tr>" + COLS.map(([k, l]) =>
+      `<th data-k="${k}" scope="col">${l} <span class="ar">${S.sort.k === k ? (S.sort.d > 0 ? "▲" : "▼") : ""}</span></th>`).join("") + "</tr>";
+    $("tbl").tHead.querySelectorAll("th").forEach(th => th.onclick = () => {
+      const k = th.dataset.k; S.sort = {k, d: S.sort.k === k ? -S.sort.d : 1}; table();
+    });
+    const v = visible();
+    $("cnt").textContent = `${v.length} of ${G.length} genes`;
+    const rows = v.map(g => `<tr data-i="${g._i}" class="${S.sel === g._i ? "sel" : ""}">` + COLS.map(([k, , cls]) => {
+      let val = g[k] || "";
+      if (k === "final_function") val = `<span class="fn">${swatch(catOf(g))}${esc(CAT[catOf(g)].label)}</span>`;
+      else if (k === "needs_review") val = yes(val) ? `<span class="badge rev">review</span>` : "";
+      else if (k === "final_product") val = esc(name(g));
+      else val = esc(val);
+      return `<td class="${cls || ""}">${val}</td>`;
+    }).join("") + "</tr>");
+    $("tbl").tBodies[0].innerHTML = rows.join("") || `<tr><td colspan="${COLS.length}" class="empty">No gene matches the filters.</td></tr>`;
+    $("tbl").tBodies[0].querySelectorAll("tr[data-i]").forEach(tr => tr.onclick = () => select(+tr.dataset.i, "table"));
+  }
+
+  // ---------------------------------------------------------------- detail
+  function accLink(acc, db) {
+    if (!acc) return "";
+    const af = /^AF-([A-Z0-9]+)-F\d+/.exec(acc);
+    if (af) return `<a href="https://alphafold.ebi.ac.uk/entry/${af[1]}" target="_blank" rel="noopener">${esc(acc)}</a>`;
+    const pdb = /^([0-9][A-Za-z0-9]{3})(?:[_-][A-Za-z0-9]+)?$/.exec(acc);
+    if (pdb && /pdb/i.test(db || "pdb")) return `<a href="https://www.rcsb.org/structure/${pdb[1]}" target="_blank" rel="noopener">${esc(acc)}</a>`;
+    return esc(acc);
+  }
+  const dl = pairs => {
+    const p = pairs.filter(([, v]) => v !== "" && v !== null && v !== undefined);
+    return p.length ? `<dl>${p.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>` : `<div class="empty">—</div>`;
+  };
+  function detail() {
+    const el = $("detail");
+    if (S.sel === null) {
+      el.innerHTML = `<h2>Gene details</h2><div class="empty">Click a gene on the map or a row in the table to see the evidence behind its annotation: PHold, the FoldSeek top-3, the curation decision${M.has_phynteny ? " and phynteny" : ""}.</div>`;
+      return;
+    }
+    const g = G[S.sel];
+    const top3 = (g.fs_top3 || "").split("|").map(s => s.trim()).filter(Boolean);
+    const kng = (g.fs_top3_kingdoms || "").split("|").map(s => s.trim());
+    let h = `<h2>${esc(name(g))}</h2><div class="lt mono">${esc(g.locus_tag)}</div>
+      <div class="row">${swatch(catOf(g))}<span class="badge">${esc(CAT[catOf(g)].label)}</span>
+      ${g.annotation_source ? `<span class="badge">${esc(g.annotation_source)}</span>` : ""}
+      ${g.fs_confidence ? `<span class="badge">FoldSeek ${esc(g.fs_confidence)}</span>` : ""}
+      ${yes(g.needs_review) ? `<span class="badge rev">needs review</span>` : ""}</div>`;
+    if (g.curation_explanation) h += `<h4>Why this call</h4><div class="why">${esc(g.curation_explanation)}</div>`;
+    h += `<h4>Gene</h4>` + dl([
+      ["Prophage", esc(g.prophage)],
+      ["Position", M.has_coords ? `${esc(g._contig)}:${g._start.toLocaleString()}–${g._end.toLocaleString()} (${g._strand === 1 ? "+" : "−"})` : ""],
+      ["Length", g.aa_length ? `${esc(g.aa_length)} aa` : ""],
+      ["Short name", esc(g.short_name)],
+      ["Agreement", esc(g.agreement)],
+      ["Action", `<span class="mono">${esc(g.curation_action)}</span>`],
+      ["Hypothetical in input", g.was_hypothetical ? (yes(g.was_hypothetical) ? "yes" : "no") : ""],
+    ]);
+    if (M.mode === "genome") h += `<h4>Pharokka</h4>` + dl([["Product", esc(g.pharokka_product)], ["Function", esc(g.pharokka_function)]]);
+    h += `<h4>PHold</h4>` + dl([
+      ["Product", esc(g.phold_product)], ["Category", esc(g.phold_function_cat)],
+      ["Confidence", esc(g.phold_confidence)], ["PHROG", esc(g.phold_phrog)], ["E-value", fmtE(g.phold_evalue)],
+    ]);
+    h += `<h4>FoldSeek</h4>` + dl([
+      ["Best hit", esc(g.fs_description)], ["Accession", accLink(g.fs_accession, g.fs_db)], ["Database", esc(g.fs_db)],
+      ["Organism", esc(g.fs_taxname)], ["Confidence", esc(g.fs_confidence)], ["Score", esc(g.fs_score)],
+      ["E-value", fmtE(g.fs_evalue)], ["Identity", g.fs_pident ? `${(+g.fs_pident * (+g.fs_pident <= 1 ? 100 : 1)).toFixed(0)}%` : ""],
+      ["Query cover", g.fs_qcov_frac ? `${(+g.fs_qcov_frac * 100).toFixed(0)}%` : ""], ["Same host", esc(g.fs_same_host)],
+    ]);
+    if (top3.length) h += `<h4>FoldSeek top-3</h4><ol>${top3.map((t, i) => `<li>${esc(t)}${kng[i] && kng[i] !== "Unknown" ? ` <span class="badge">${esc(kng[i])}</span>` : ""}</li>`).join("")}</ol>`;
+    if (M.has_phynteny) h += `<h4>Phynteny / synteny</h4>` + dl([
+      ["Probability", g.phynteny_probability ? (+g.phynteny_probability).toFixed(2) : ""], ["Synteny hint", esc(g.synteny_hint)],
+    ]);
+    if (g.note) h += `<h4>Note</h4><div class="why mono" style="font-size:12px">${esc(g.note)}</div>`;
+    el.innerHTML = h;
+  }
+
+  function select(i, from) {
+    S.sel = (S.sel === i && from !== "table") ? null : i;
+    maps(); table(); detail();
+    if (S.sel !== null && from === "map") {
+      const tr = $("tbl").querySelector(`tr[data-i="${i}"]`); if (tr) tr.scrollIntoView({block: "nearest"});
+    }
+    if (S.sel !== null && from === "table") {
+      const ge = $("tracks").querySelector(`.gene[data-i="${i}"]`);
+      if (ge) { const sc = ge.closest(".scroller"), bb = ge.getBBox(); sc.scrollLeft = Math.max(0, bb.x - sc.clientWidth / 2); }
+    }
+  }
+
+  // ---------------------------------------------------------------- csv
+  function csv() {
+    const v = visible(), keys = Object.keys(G[0]).filter(k => !k.startsWith("_"));
+    const q = s => /[",\n]/.test(s = String(s ?? "")) ? `"${s.replace(/"/g, '""')}"` : s;
+    const blob = new Blob([[keys.join(","), ...v.map(g => keys.map(k => q(g[k])).join(","))].join("\n")], {type: "text/csv"});
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "phagefactor_selection.csv"; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  // ---------------------------------------------------------------- wiring
+  function render() { tiles(); legend(); maps(); table(); detail(); }
+  let qT; $("q").oninput = e => { clearTimeout(qT); qT = setTimeout(() => { S.q = e.target.value.trim().toLowerCase(); render(); }, 150); };
+  $("fProphage").onchange = e => { S.prophage = e.target.value; S.zoom = null; render(); };
+  $("fSource").onchange = e => { S.source = e.target.value; render(); };
+  $("fConf").onchange = e => { S.conf = e.target.value; render(); };
+  $("fReview").onchange = e => { S.review = e.target.checked; render(); };
+  $("fHypo").onchange = e => { S.hypo = e.target.checked; render(); };
+  $("reset").onclick = () => {
+    Object.assign(S, {q: "", prophage: "", source: "", conf: "", review: false, hypo: false, sel: null, zoom: null});
+    S.cats.clear(); ["q", "fProphage", "fSource", "fConf"].forEach(id => $(id).value = ""); $("fReview").checked = $("fHypo").checked = false; render();
+  };
+  $("zin").onclick = () => { S.zoom = (S.zoom ?? fitScale()) * 2; maps(); };
+  $("zout").onclick = () => { S.zoom = Math.max(2, (S.zoom ?? fitScale()) / 2); maps(); };
+  $("zfit").onclick = () => { S.zoom = null; maps(); };
+  $("csv").onclick = csv;
+  $("theme").onclick = () => {
+    const root = document.documentElement;
+    const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    root.dataset.theme = dark ? "light" : "dark";
+    try { localStorage.setItem("pf-theme", root.dataset.theme); } catch (e) {}
+  };
+  let rT; addEventListener("resize", () => { clearTimeout(rT); rT = setTimeout(() => { if (S.zoom === null) maps(); }, 200); });
+  render();
+})();
+</script>
+</body>
+</html>

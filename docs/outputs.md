@@ -13,7 +13,7 @@
 └── curation/
     ├── curated_annotations.csv     # written by 04_curate_annotations.py
     └── review_suggested.csv        # written by 05_build_output.py
-                                     # (both run in one job, steps/04_curate.sh)
+                                     # (both in the curate step)
 05_phynteny/
 ├── phynteny.tsv  phynteny.gbk  phynteny_predictions.csv
 ├── final_annotations_integrated.csv  # phynteny merged into final_function
@@ -34,7 +34,9 @@ orange). Key columns:
 - `final_product`, `final_function` — the curated call
 - `was_hypothetical` — was this a Pharokka hypothetical (i.e. a pipeline target)?
 - `annotation_source` — evidence category (see below)
-- `best_hit_kingdom` — Bacteria/Archaea/Virus/Eukaryote/Unknown
+- `best_hit_kingdom` — Bacteria/Archaea/Virus/Eukaryote/Unknown (from the FoldSeek
+  lineage, else the taxid, else the organism name; `all_hits.csv` has it per hit as
+  `kingdom` + `kingdom_source`)
 
 **Pharokka**: `pharokka_product`, `pharokka_function`
 **Phold**: `phold_product`, `phold_function_cat`, `phold_confidence`, `phold_phrog`,
@@ -56,14 +58,13 @@ each of the FoldSeek top-3 hits, positionally parallel to `fs_top3`
 |---|---|
 | `both agree` | Phold and custom-FoldSeek concur (strong/partial) |
 | `merged` | combined into one more-specific call |
-| `foldseek` → **structural-only** | FoldSeek structural homology, no Phold corroboration |
-| `phold` → **phold-only** | Phold call, no FoldSeek support |
+| `foldseek` | FoldSeek-only: named from the FoldSeek hits, no informative Phold call |
+| `phold` | Phold-only: Phold call, no FoldSeek support |
 | `pharokka` | non-hypothetical, kept from Pharokka |
 | `manual_review` / `curation_suggestion` | needs_review rows (reviewer-edited / rule engine's suggestion accepted as-is) |
 | `structural-uncharacterised` | a CONFIDENT/GOOD fold match to an **unnamed** target (written by `07_integrate`). `final_product` keeps the target's header (often a DUF), so the fold is recorded — but the FUNCTION is unknown. **Do not count these as annotated.** |
-| `no_hit` | still hypothetical |
-
-> Reader-facing rename: surface `foldseek` as **structural-only** in figures/tables.
+| `no_informative_hit` | still hypothetical: hits, but none naming a function |
+| `no_hit` | still hypothetical: no hit |
 
 ## `04_output/updated_prophages.gb`
 GenBank with curated `/product`, `/function`, and `/note` provenance per CDS.
@@ -72,8 +73,8 @@ build from coords for the pre-CDS sub-mode). Not produced in pangenome sub-mode
 (no genome coordinates).
 
 ## `04_output/pangenome_reference.{csv,xlsx,faa}` (pangenome sub-mode)
-Built by `steps/08_pangenome_reference.sh` after curation, when an id map
-(`input/pangenome_id_map.csv`) is present. Rejoins the final table (keyed on the
+Built after curation in pangenome mode, from the id map
+(`<run>/split/pangenome/pangenome_id_map.csv`). Rejoins the final table (keyed on the
 clean `pang_NNNNN` ids) back to the biological group names + sequences.
 
 - `.csv` / `.xlsx` — one row per pan-genome group: `group_id`,
@@ -91,12 +92,18 @@ clean `pang_NNNNN` ids) back to the biological group names + sequences.
   lysis cassette, integration module).
 - `05_phynteny/final_with_synteny.gb` — GBK with synteny/phynteny notes.
 - `05_phynteny/run/` — `phynteny_run.log` (phynteny_transformer's verbose log) and
-  `phynteny_input.fasta` (the FASTA it wrote), relocated/renamed there by
-  `steps/05_phynteny.sh`.
+  `phynteny_input.fasta` (the FASTA it wrote).
 
 ## `04_output/curation/review_suggested.csv`
-Genes flagged for manual review (written by `05_build_output.py`, part of
-`steps/04_curate.sh`). Read `curation_explanation` for the rule engine's stated
-reasoning, accept/edit `final_annotation`, then re-run. Pre-filled with
-`curation_suggestion`. (`04_curate_annotations.py`, the other half of the same
-job, writes the companion `04_output/curation/curated_annotations.csv`.)
+Genes flagged for review, with the proposed name (`final_annotation`) and the reason
+(`curation_explanation`). To change a call, add a row to `input/overrides.tsv` and
+re-run (only curation re-runs; the review flag is cleared).
+
+## Interactive report (`04_output/report.html`)
+
+One self-contained HTML file (data embedded, opens offline, can be emailed): genome
+map per prophage coloured by function (genes in input order when the run has no
+GenBank), a searchable/filterable table, and per gene the evidence (Phold, FoldSeek
+best hit + top-3 with links to AlphaFold DB / RCSB, curation reason, phynteny).
+"Export visible rows" saves the current selection as CSV. Built by the Snakemake
+`report` rule, or for any run dir: `python scripts/09_report.py --run_dir <run_dir>`.

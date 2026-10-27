@@ -44,13 +44,9 @@ if _LIB_DIR.is_dir():
     sys.path.insert(0, str(_LIB_DIR))
 
 # Single source of truth for description vocabulary (see lexicon.py).
-from lexicon import (
-    VIRUS_KEYWORDS as _VIRUS_KEYWORDS,
-    ARCHAEA_KEYWORDS as _ARCHAEA_KEYWORDS,
-    BACTERIA_KEYWORDS as _BACTERIA_KEYWORDS,
-    is_eukaryotic_taxname as _is_eukaryotic_taxname,
-    COMPLEMENTARY_CATEGORY_MAP,
-)
+from lexicon import COMPLEMENTARY_CATEGORY_MAP
+from taxonomy import KINGDOMS, kingdom_from_taxname
+from rules import same_function
 
 from config import (
     GENE_METADATA_CSV,
@@ -257,64 +253,43 @@ def _safe_float(val) -> float:
 # will find some eukaryotic fold match. We demote such hits one step.
 # -----------------------------------------------------------------------------
 
-# Keyword-based kingdom assignment (no NCBI taxonomy dependency).
-# Bacterial genera below are an inclusive but not exhaustive set; the lookup
-# is conservative -- when in doubt it returns "Unknown" rather than guessing.
+# The domain of each hit comes from step 02 (FoldSeek taxlineage, else taxid
+# via the NCBI taxdump, else organism-name keywords): see lib/taxonomy.py.
 # Extend as needed if you see common genera being missed in your hits.
 # The eukaryote list is lexicon.EUKARYOTE_KEYWORDS,
 # matched by lexicon.is_eukaryotic_taxname() (word boundaries, not substrings --
 # 'Campylobacter conciSUS' is not a pig). 02d uses the same predicate.
 
 
-def _kingdom_from_taxname(taxname) -> str:
-    """
-    Classify a Foldseek taxname into Bacteria / Archaea / Virus / Eukaryote / Unknown.
-
-    Uses inclusive keyword matching on the first word (genus) and the full string.
-    Conservative -- unknown taxa return "Unknown" rather than being misclassified.
-
-    This is intentionally a keyword heuristic (no NCBI taxdump dependency).
-    The Foldseek output only carries taxname (no taxid), so we make do with names.
-    """
-    if not taxname or not isinstance(taxname, str):
-        return "Unknown"
-    t = taxname.strip().lower()
-    if not t or t in ("na", "nan", "unknown", "none", ""):
-        return "Unknown"
-
-    # Virus check first -- some virus names contain bacterial genus names
-    # (e.g. "Campylobacter virus CP21" should be Virus, not Bacteria)
-    if any(kw in t for kw in _VIRUS_KEYWORDS):
-        return "Virus"
-
-    # Check first word (genus) + full string for the others
-    first = t.split()[0] if t.split() else t
-    if first in _BACTERIA_KEYWORDS or any(kw in t for kw in ("bacteri", "proteobacter")):
-        return "Bacteria"
-    if first in _ARCHAEA_KEYWORDS or "archae" in t:
-        return "Archaea"
-    # Same predicate 02d uses for its parse-time filter -- one list, one matcher.
-    if _is_eukaryotic_taxname(t):
-        return "Eukaryote"
-    return "Unknown"
+def _hit_kingdom(row, taxname) -> str:
+    """Domain of a best/top-3 hit: the `kingdom` column step 02 resolved from
+    the FoldSeek lineage or taxid (lib/taxonomy.py), else organism-name
+    keywords (best_hit.csv files written before that column existed)."""
+    k = clean_str(_scalar(row.get("kingdom", ""), "")) if row is not None else ""
+    if k in KINGDOMS or k == "Unknown":
+        return k
+    return kingdom_from_taxname(taxname)
 
 
 def _apply_eukaryotic_demote(fs_confidence: str, best_kingdom: str,
-                              top_kingdoms) -> tuple:
+                              top_hits, best_desc: str = "") -> tuple:
     """
-    Apply the eukaryotic kingdom filter (taxonomy-only).
+    Apply the eukaryotic kingdom filter.
 
-    If the best Foldseek hit is Eukaryote AND no Bacteria/Archaea/Virus appears
-    in the top hits, demote the confidence one step. (Description-euka handling
-    lives in 04_curate's euka-substitute gate, which prefers a bacterial top-3
-    hit rather than demoting.)
+    top_hits: (kingdom, description) of the gene's top-3 hits.
+    If the best Foldseek hit is Eukaryote AND no Bacteria/Archaea/Virus top-3
+    hit names the same function, demote the confidence one step. A bacterial
+    hit of another function is no support.
+    (Description-euka handling lives in 04_curate's euka-substitute gate,
+    which prefers a bacterial top-3 hit rather than demoting.)
 
     Demote one step: CONFIDENT/GOOD -> BORDERLINE, BORDERLINE -> WEAK.
     Returns (new_confidence, was_demoted: bool, reason: str).
     """
     if best_kingdom != "Eukaryote":
         return fs_confidence, False, ""
-    if {k for k in top_kingdoms if k in ("Bacteria", "Archaea", "Virus")}:
+    if any(k in ("Bacteria", "Archaea", "Virus") and same_function(d, best_desc)
+           for k, d in top_hits):
         return fs_confidence, False, ""
     DEMOTE = {
         "CONFIDENT":  "BORDERLINE",
@@ -325,7 +300,7 @@ def _apply_eukaryotic_demote(fs_confidence: str, best_kingdom: str,
     }
     new_conf = DEMOTE.get(fs_confidence.upper() if isinstance(fs_confidence, str) else "NO_HIT",
                           fs_confidence)
-    reason = (f"eukaryotic-only top hits (best={best_kingdom}); "
+    reason = (f"no prokaryotic/viral top-3 hit of the same function (best={best_kingdom}); "
               f"demoted {fs_confidence} -> {new_conf}")
     return new_conf, True, reason
 
@@ -620,19 +595,17 @@ def main():
         # Compute best-hit kingdom and the list of kingdoms across the top hits.
         # If the best hit is Eukaryote AND nothing in the top hits is
         # Bacteria/Archaea/Virus, demote foldseek_confidence one step.
-        best_hit_kingdom = _kingdom_from_taxname(fs_taxname) if has_fs else "Unknown"
-        top_taxnames = []
+        best_hit_kingdom = _hit_kingdom(fr, fs_taxname) if has_fs else "Unknown"
+        top_hits = []
         if not fs_top3.empty and locus_tag in set(fs_top3["gene"]):
             for _, r3 in fs_top3[fs_top3["gene"] == locus_tag].iterrows():
                 tn = clean_str(r3.get("taxname", "NA"))
-                if tn and tn != "NA":
-                    top_taxnames.append(tn)
-        top_kingdoms = [_kingdom_from_taxname(tn) for tn in top_taxnames]
-        top3_kingdoms_str = " | ".join(top_kingdoms) if top_kingdoms else "NA"
+                if (tn and tn != "NA") or clean_str(r3.get("kingdom", "")) in KINGDOMS:
+                    top_hits.append((_hit_kingdom(r3, tn), clean_str(r3.get("description", ""))))
 
         if has_fs:
             new_conf, demoted, demote_reason = _apply_eukaryotic_demote(
-                fs_confidence, best_hit_kingdom, top_kingdoms,
+                fs_confidence, best_hit_kingdom, top_hits, fs_desc,
             )
             # `demoted` is True exactly when best_hit_kingdom=="Eukaryote" AND no
             # Bacteria/Archaea/Virus support anything in the top-3 -- i.e. the
@@ -656,13 +629,17 @@ def main():
             demote_reason = ""
 
         # Get top3 FS descriptions for the note column
-        top3_descs = []
+        # foldseek_top3_kingdoms is aligned with these descriptions (step 04's
+        # euka-substitute reads the i-th kingdom for the i-th description).
+        top3_descs, top3_desc_kingdoms = [], []
         if not fs_top3.empty and locus_tag in set(fs_top3["gene"]):
             for _, r3 in fs_top3[fs_top3["gene"] == locus_tag].iterrows():
                 d = clean_str(r3.get("description", "NA"))
                 if is_informative(d):
                     top3_descs.append(d)
+                    top3_desc_kingdoms.append(_hit_kingdom(r3, clean_str(r3.get("taxname", "NA"))))
         top3_str = " | ".join(top3_descs[:3]) if top3_descs else "NA"
+        top3_kingdoms_str = " | ".join(top3_desc_kingdoms[:3]) if top3_desc_kingdoms else "NA"
 
         # Agreement classification
         agreement, fz_score = classify_agreement(

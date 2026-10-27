@@ -1,0 +1,18 @@
+# Snakemake profile: submit every step as a SLURM job.
+# Run it from the LOGIN node (inside tmux/screen: snakemake must stay alive
+# while the jobs run; it only waits, it uses no CPU):
+#   micromamba activate pf_snakemake
+#   phagefactor run --slurm [-n]
+# Partition / QOS / account per step come from config/workflow.yaml (slurm_*,
+# resources:). Requires snakemake >= 8 + snakemake-executor-plugin-slurm.
+executor: slurm
+jobs: 200                 # max jobs queued/running at once
+printshellcmds: true
+show-failed-logs: true
+rerun-incomplete: true
+latency-wait: 60          # shared filesystem: wait for outputs to appear
+retries: 0                # no automatic resubmission (a failed 8 h search would just fail again)
+keep-going: true          # one failed batch/prophage does not stop the independent ones
+local-cores: 1            # the webapi search (search_mode=webapi) runs on the login node
+max-jobs-per-timespan: 50/1s
+rerun-triggers: [mtime, params, input, software-env]   # script changes rerun via the rules' code inputs; edits to a shell command alone do not

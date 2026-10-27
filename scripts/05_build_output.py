@@ -232,11 +232,8 @@ def _apply_overrides(curated: pd.DataFrame, overrides_path: Path) -> pd.DataFram
 
 
 def _load_foldseek_qcov(foldseek_dir: Path) -> dict:
-    # Use FOLDSEEK_BEST_HIT from config (cluster: 3di_tokens/best_hit.csv;
-    # local: foldseek_best_hit.csv) rather than constructing the path here.
     best_hit = FOLDSEEK_BEST_HIT
     if not best_hit.exists():
-        # Fallback to legacy local path in case config doesn't define it
         best_hit = foldseek_dir / "foldseek_best_hit.csv"
     if not best_hit.exists():
         log(f"WARNING: {best_hit} not found -- qcov_frac/partial_match will be NA")

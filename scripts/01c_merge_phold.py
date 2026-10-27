@@ -2,24 +2,15 @@
 """
 01c_merge_phold.py
 ==================
-Post-process PHold output and write a single merged TSV.
+Genome mode: merge the per-prophage PHold outputs (01_phold/<NAME>/) into
+01_phold/combined/:
 
-Supports two input layouts automatically:
+  phold_all.tsv          all CDS predictions (tab-separated, with 'prophage' column)
+  phold_all_simple.csv   key columns only, for quick inspection
+  phold_3di.fasta        3Di sequences of every prophage (input of step 02)
+  phold_aa.fasta         amino-acid sequences of every prophage
 
-  Layout A -- single combined run (01_run_phold_local.sh / 01b_run_phold_hpc.sh):
-    01_phold/combined/phold_per_cds_predictions.tsv
-
-  Layout B -- per-sample run (01_run_pharokka_phold.sh):
-    01_pharokka/<sample>/phold/phold_per_cds_predictions.tsv
-    (one TSV per prophage, merged here)
-
-Writes:
-  01_phold/combined/phold_all.tsv        (tab-separated, with 'prophage' column)
-  01_phold/combined/phold_all_simple.csv (key columns only, for quick inspection)
-
-Usage:
-  cd phagefactor/
-  python scripts/01c_merge_phold.py
+Prophages are taken in the order of <input>/prophage_list.txt.
 """
 
 import sys
@@ -34,8 +25,7 @@ _LIB_DIR = Path(__file__).resolve().parent / "lib"
 if _LIB_DIR.is_dir():
     sys.path.insert(0, str(_LIB_DIR))
 
-from config import (PHOLD_COMB_DIR, PHOLD_COMBINED_TSV,
-                    PHAROKKA_OUT_DIR, PROPHAGE_NAMES, PHOLD_TSV_FILENAME,
+from config import (PHOLD_COMB_DIR, PHOLD_COMBINED_TSV, PROPHAGE_NAMES,
                     PHOLD_OUT_DIR)
 from utils import log, section, load_phold_tsv, is_informative
 
@@ -50,35 +40,9 @@ except ImportError:
 # Input discovery
 # ---------------------------------------------------------------------------
 
-def _find_combined_tsv():
-    """Return path to the combined PHold TSV if it exists (layout A)."""
-    p = PHOLD_COMB_DIR / PHOLD_TSV_FILENAME
-    if p.exists() and p.stat().st_size > 0:
-        return p
-    return None
-
-
-def _find_per_sample_tsvs():
-    """
-    Return list of (sample_name, Path) pairs from the pharokka per-sample
-    output directory (layout B: 01_pharokka/<sample>/phold/phold_per_cds_predictions.tsv).
-    """
-    hits = []
-    if not PHAROKKA_OUT_DIR.exists():
-        return hits
-    for sample_dir in sorted(PHAROKKA_OUT_DIR.iterdir()):
-        if not sample_dir.is_dir():
-            continue
-        tsv = sample_dir / "phold" / PHOLD_TSV_FILENAME
-        if tsv.exists() and tsv.stat().st_size > 0:
-            hits.append((sample_dir.name, tsv))
-    return hits
-
-
 def _find_cluster_phold_tsvs():
     """
-    Cluster layout (Layout C): phold writes per-prophage outputs to
-    01_phold/<NAME>/<NAME>_per_cds_predictions.tsv (phold --prefix <NAME>).
+    phold --prefix <NAME> writes 01_phold/<NAME>/<NAME>_per_cds_predictions.tsv.
     Return list of (sample_name, Path) pairs.
     """
     hits = []
@@ -100,6 +64,25 @@ def _find_cluster_phold_tsvs():
     return hits
 
 
+def _merge_fasta(suffix: str, out: Path) -> None:
+    """Concatenate 01_phold/<NAME>/<NAME>_<suffix>.fasta in prophage_list order."""
+    found, n_seq = 0, 0
+    with open(out, "w") as fh:
+        for name in PROPHAGE_NAMES:
+            src = next((c for c in (PHOLD_OUT_DIR / name / f"{name}_{suffix}.fasta",
+                                    PHOLD_OUT_DIR / name / f"{name}_phold_{suffix}.fasta",
+                                    PHOLD_OUT_DIR / name / f"phold_{suffix}.fasta")
+                        if c.is_file()), None)
+            if src is None:
+                log(f"  WARNING: no {suffix} FASTA for {name}")
+                continue
+            text = src.read_text()
+            fh.write(text)
+            found += 1
+            n_seq += text.count(">")
+    log(f"{suffix} FASTA: {found} prophages, {n_seq} sequences -> {out}")
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -112,64 +95,19 @@ def main():
     # ------------------------------------------------------------------ #
     # 1. Discover input                                                    #
     # ------------------------------------------------------------------ #
-    combined_tsv   = _find_combined_tsv()
-    per_sample     = _find_per_sample_tsvs()       # Layout B (legacy)
-    cluster_sample = _find_cluster_phold_tsvs()    # Layout C (this pipeline)
-
-    if combined_tsv:
-        log(f"Layout A detected: single combined TSV")
-        log(f"  {combined_tsv}")
-        merged = load_phold_tsv(combined_tsv)
-        log(f"  {len(merged)} CDS rows, {len(merged.columns)} columns")
-        # prophage name comes from contig_id (= LOCUS from GenBank record)
-        if "contig_id" not in merged.columns:
-            log("ERROR: 'contig_id' column missing in PHold output.")
-            log(f"  Available: {list(merged.columns)}")
-            sys.exit(1)
-        merged["prophage"] = merged["contig_id"]
-
-    elif per_sample:
-        log(f"Layout B detected: {len(per_sample)} per-sample TSV(s) in {PHAROKKA_OUT_DIR}/")
-        dfs = []
-        for sample_name, tsv_path in per_sample:
-            df = load_phold_tsv(tsv_path)
-            # Use contig_id if available, else fall back to sample dir name
-            if "contig_id" in df.columns:
-                df["prophage"] = df["contig_id"]
-            else:
-                df["prophage"] = sample_name
-            log(f"  {sample_name}: {len(df)} CDS")
-            dfs.append(df)
-        merged = pd.concat(dfs, ignore_index=True)
-        log(f"  Total: {len(merged)} CDS rows")
-
-    elif cluster_sample:
-        log(f"Layout C detected: {len(cluster_sample)} per-prophage TSV(s) in {PHOLD_OUT_DIR}/")
-        dfs = []
-        for sample_name, tsv_path in cluster_sample:
-            df = load_phold_tsv(tsv_path)
-            if "contig_id" in df.columns:
-                df["prophage"] = df["contig_id"]
-            else:
-                df["prophage"] = sample_name
-            log(f"  {sample_name}: {len(df)} CDS  ({tsv_path.name})")
-            dfs.append(df)
-        merged = pd.concat(dfs, ignore_index=True)
-        log(f"  Total: {len(merged)} CDS rows")
-
-    else:
-        log("ERROR: No PHold output found.")
-        log(f"  Looked for:")
-        log(f"    Layout A: {PHOLD_COMB_DIR / PHOLD_TSV_FILENAME}")
-        log(f"    Layout B: {PHAROKKA_OUT_DIR}/<sample>/phold/{PHOLD_TSV_FILENAME}")
-        log(f"    Layout C: {PHOLD_OUT_DIR}/<NAME>/<NAME>_per_cds_predictions.tsv")
-        log("")
-        log("  Run one of the following first:")
-        log("    bash scripts/01_run_phold_local.sh       (local, combined GB)")
-        log("    sbatch scripts/01b_run_phold_hpc.sh      (SLURM, combined GB)")
-        log("    bash scripts/01_run_pharokka_phold.sh    (Pharokka + PHold per FASTA)")
-        log("    sbatch steps/01_phold_array.sh           (cluster array job)")
+    cluster_sample = _find_cluster_phold_tsvs()
+    if not cluster_sample:
+        log(f"ERROR: no PHold output found ({PHOLD_OUT_DIR}/<NAME>/<NAME>_per_cds_predictions.tsv)")
         sys.exit(1)
+    log(f"{len(cluster_sample)} per-prophage TSV(s) in {PHOLD_OUT_DIR}/")
+    dfs = []
+    for sample_name, tsv_path in cluster_sample:
+        df = load_phold_tsv(tsv_path)
+        df["prophage"] = df["contig_id"] if "contig_id" in df.columns else sample_name
+        log(f"  {sample_name}: {len(df)} CDS  ({tsv_path.name})")
+        dfs.append(df)
+    merged = pd.concat(dfs, ignore_index=True)
+    log(f"  Total: {len(merged)} CDS rows")
 
     # ------------------------------------------------------------------ #
     # 2. Validate prophage names                                           #
@@ -232,10 +170,11 @@ def main():
     merged[simple_cols].to_csv(str(simple_out), index=False)
     log("Simplified CSV    -> " + str(simple_out))
 
-    log("\n-> Next steps: submit_all.sh normally chains this automatically. If you ran")
-    log("   this script by hand, run steps/01c_merge.sh (it also merges the 3Di/AA")
-    log("   FASTAs), then resume with:")
-    log("     RESUME=1 SKIP_PHOLD=1 bash submit_all.sh   # chains 02 (FoldSeek) -> 03 -> 04")
+    # ------------------------------------------------------------------ #
+    # 5. Concatenate the per-prophage 3Di / AA FASTAs                      #
+    # ------------------------------------------------------------------ #
+    for suffix in ("3di", "aa"):
+        _merge_fasta(suffix, PHOLD_COMB_DIR / f"phold_{suffix}.fasta")
 
 
 if __name__ == "__main__":

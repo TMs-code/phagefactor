@@ -1,0 +1,11 @@
+# Snakemake profile: run everything on THIS machine (laptop / workstation /
+# interactive node).   phagefactor run [-n]
+# Jobs run in parallel up to `cores`; phold and FoldSeek already use several
+# threads each, so keep cores modest.
+cores: 8
+printshellcmds: true
+show-failed-logs: true
+keep-going: false
+rerun-incomplete: true
+latency-wait: 5
+rerun-triggers: [mtime, params, input, software-env]   # script changes rerun via the rules' code inputs; edits to a shell command alone do not

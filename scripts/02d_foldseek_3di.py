@@ -80,14 +80,15 @@ from config import (
     PHOLD_OUT_DIR,
     PHOLD_3DI_FASTA, PHOLD_AA_FASTA,
     FOLDSEEK_3DI_DIR, FOLDSEEK_3DI_BEST, FOLDSEEK_3DI_TOP3, FOLDSEEK_3DI_ALL,
-    FOLDSEEK_EVALUE_MAX, FOLDSEEK_SCORE_OVERRIDE,
+    FOLDSEEK_EVALUE_MAX, FOLDSEEK_SCORE_OVERRIDE, FOLDSEEK_MAX_SEQS,
     PROSTT5_MASK_THRESHOLD,
     FOLDSEEK_TAXON_FILTER,
     HOST_GENUS,
     FOLDSEEK_CMD, FOLDSEEK_THREADS, FOLDSEEK_LOCAL_DBS,
 )
 from utils import log, section
-from lexicon import is_eukaryotic_taxname as _lex_is_euka
+from taxonomy import (add_kingdom_columns, kingdom_counts_log, default_resolver,
+                      DOMAIN_TAXIDS, KINGDOMS)
 
 try:
     import pandas as pd
@@ -113,6 +114,7 @@ from foldseek_scoring import (
     _is_promiscuous_fold_hit,
     _has_eukaryotic_description,
     build_best_and_top3,
+    gate_phage_boost,
 )
 
 
@@ -132,24 +134,17 @@ QUERY_AA_FASTA    = QUERY_FASTA_DIR / "hypo_aa.fasta"
 # =============================================================================
 # LOCAL FOLDSEEK OUTPUT FORMAT
 # =============================================================================
-# 15-column format for local FoldSeek searches.  We carry the same kind of
-# information as the 21-column web API m8 format used by 02b, minus the
-# fields that need structural inputs convertalis can't compute from our
-# sequence-only queryDB:
+# Local FoldSeek output: the information of the web API m8 format, minus the
+# fields that need query structures (the query DB holds ProstT5 3Di tokens only):
 #
-#   - lddt   : per-alignment LDDT.  Needs queryDB_ca (alpha-carbon coords).
-#              Our query side has no structures -- only ProstT5 3Di tokens.
-#   - prob   : ProstT5/structure-derived homology probability.  Grouped in
-#              foldseek's help under the same family as lddt/qca/tca/rmsd
-#              (`foldseek convertalis --help` shows it next to those).
-#              Requesting it also triggers the _ca file lookup -- THIS is
-#              the column that was making our convertalis fail even after
-#              we dropped lddt and added a _ca stub.
-#   - taxid/taxname : OPTIONAL per-DB.  Require a <db>_taxonomy file or
-#              a global NCBI taxdump.  afdb-swissprot and pdb100 have it;
-#              baktfold-afdb does not.  We build the per-DB format on the
-#              fly and pad missing rows with empty tax cells so all merged
-#              m8 lines have a uniform column layout.
+#   - lddt, prob : need alpha-carbon coordinates (queryDB_ca); requesting either
+#              makes convertalis look for a _ca file and fail.
+#   - taxid/taxname/taxlineage : OPTIONAL per-DB.  Require a <db>_taxonomy
+#              file or a global NCBI taxdump.  afdb50, afdb-swissprot and
+#              pdb100 have it; baktfold-afdb does not.  We build the per-DB
+#              format on the fly and pad missing rows with empty tax cells so
+#              all merged m8 lines have a uniform column layout.  taxlineage
+#              gives each hit's domain (lib/taxonomy.py).
 #
 # Notes on remaining differences from web API m8 (M8_COLS in utils.py):
 #   fident  : fraction 0-1 (web API column "pident" is percentage 0-100)
@@ -162,16 +157,17 @@ LOCAL_FMT_CORE = (
     "qstart,qend,tstart,tend,"
     "evalue,bits,qcov"
 )
-LOCAL_FMT_TAX = "taxid,taxname"
+LOCAL_FMT_TAX = "taxid,taxname,taxlineage"
 LOCAL_COLS_CORE = LOCAL_FMT_CORE.split(",")   # 13
-LOCAL_COLS_TAX  = LOCAL_FMT_TAX.split(",")    # 2
-LOCAL_COLS = LOCAL_COLS_CORE + LOCAL_COLS_TAX  # 15
-# We append an extra column 'source_db' at write time recording which
-# FOLDSEEK_LOCAL_DBS entry each hit came from (afdb-swissprot / pdb100 /
-# baktfold-afdb).  parse_local_m8_file tolerates rows with or without this
-# 16th column.
-LOCAL_COLS_OUT = LOCAL_COLS + ["source_db"]    # 16
-N_LOCAL_COLS = len(LOCAL_COLS_OUT)             # 16
+LOCAL_COLS_TAX  = LOCAL_FMT_TAX.split(",")    # 3
+ALL_HITS_PER_GENE = 50     # rows per gene written to all_hits.csv
+LOCAL_COLS = LOCAL_COLS_CORE + LOCAL_COLS_TAX  # 16: per-DB m8 layout
+# Per-gene m8 files add 'source_db' (which FOLDSEEK_LOCAL_DBS entry each hit
+# came from) as column 16 and move taxlineage after it, so per-gene files
+# written before taxlineage was requested (16 columns) still parse: their
+# lineage cell is just empty and the domain comes from the taxid instead.
+LOCAL_COLS_OUT = LOCAL_COLS_CORE + ["taxid", "taxname", "source_db", "taxlineage"]  # 17
+N_LOCAL_COLS = len(LOCAL_COLS_OUT)             # 17
 
 
 def _db_has_taxonomy(db_path: Path) -> bool:
@@ -203,18 +199,6 @@ def _pad_m8_taxonomy(m8_path: Path, n_target_cols: int) -> None:
         m8_path.write_text("\n".join(out_lines) + "\n")
 
 
-# Eukaryote keyword set — mirrors step 03's _EUKARYOTE_KEYWORDS
-# The eukaryote taxname set lives in lexicon.py as EUKARYOTE_KEYWORDS, matched
-# on word boundaries by lexicon.is_eukaryotic_taxname(). ONE list, shared with
-# step 03 -- see the note there on why substring matching was wrong here.
-
-
-def _is_eukaryotic_taxname(taxname: str) -> bool:
-    """Delegate to the lexicon. Kept as a thin wrapper so the call sites and the
-    FOLDSEEK_TAXON_FILTER logic below read the same as before."""
-    return _lex_is_euka(taxname)
-
-
 def _build_taxon_filter_set(taxon_filter_str: str) -> frozenset:
     """
     Parse comma-separated taxon IDs string (e.g. '2,2157,10239') into a frozenset
@@ -228,17 +212,8 @@ def _build_taxon_filter_set(taxon_filter_str: str) -> frozenset:
 # -----------------------------------------------------------------------------
 # Source-DB tag normalization
 # -----------------------------------------------------------------------------
-# Each entry in FOLDSEEK_LOCAL_DBS is a single-source FoldSeek database
-# (afdb-swissprot, pdb100, baktfold-afdb).  We do not search any "bundled"
-# DBs anymore, so the source_db name is itself the right tag for the
-# foldseek_subdb column -- no accession-prefix parsing needed.
-#
-# Historical note:  an earlier design treated baktfold_db/ as a SINGLE bundled
-# DB and tried to split hits into baktfold/{afdb50,swissprot,pdb,cath} by
-# accession prefix.  We now know baktfold_db/ contains four INDEPENDENT
-# FoldSeek databases.  Of those, we keep only AFDBClusters (= baktfold-afdb)
-# because baktfold/swissprot and baktfold/pdb overlap with our standalone
-# afdb_swissprot_db / pdb100_db, and baktfold/cath is out of scope.
+# Each entry in FOLDSEEK_LOCAL_DBS is a single-source FoldSeek database, so the
+# source_db name is itself the tag for the foldseek_subdb column.
 # -----------------------------------------------------------------------------
 
 def _classify_subdb(source_db: str) -> str:
@@ -280,10 +255,8 @@ def _load_prostt5_probs(phold_out_dir: Path) -> dict:
     import json as _json
 
     probs: dict = {}
-    # Recursive glob: genome mode writes 01_phold/<PROPHAGE>/..._probabilities.json
-    # (1 level deep) but protein mode writes 01_phold/proteins/predictions/..._probabilities.json
-    # (2 levels deep). The non-recursive "*/*..." pattern only matched the genome-mode
-    # layout and silently disabled masking in protein mode.
+    # Recursive: genome mode writes 01_phold/<PROPHAGE>/..._probabilities.json,
+    # protein mode 01_phold/proteins/predictions/..._probabilities.json.
     json_files = sorted(phold_out_dir.glob("**/*_prostT5_3di_all_probabilities.json"))
     if not json_files:
         log(f"  NOTE: No prostT5 per-residue probability files found under "
@@ -375,11 +348,8 @@ def prepare_query_fastas(hypo_locus_tags: set, force: bool = False) -> tuple:
                     continue
                 seq = str(rec.seq)
                 if PROSTT5_MASK_THRESHOLD > 0 and prostt5_probs:
-                    # phold keys these two files DIFFERENTLY: the 3Di FASTA header
-                    # is "PROPHAGE:gene_id" but the probabilities JSON uses the
-                    # BARE "gene_id". Looking up only rec.id therefore matched
-                    # nothing and silently disabled masking (probs_available=False
-                    # for every gene, mean_prob=nan). Try both spellings.
+                    # the 3Di FASTA header is "PROPHAGE:gene_id", the
+                    # probabilities JSON key the bare gene_id: try both
                     probs_for_gene = (prostt5_probs.get(rec.id)
                                       or prostt5_probs.get(gene_id)
                                       or [])
@@ -606,13 +576,9 @@ def build_combined_query_db(foldseek_bin: str) -> Path:
     alntmscore/rmsd/prob/complex*).  Our LOCAL_FMT_CORE deliberately omits
     all of these.
 
-    Why this beats the mmseqs route we tried before:
-      * It's the maintainer-endorsed path -- zero surprise factor.
-      * tsv2db is foldseek-native, no cross-tool format risk.
-      * Integer-key alignment is enforced by construction (we write key K
-        for the same ID in all three TSVs).
-      * No _ss-suffix manual move; tsv2db writes the right files directly.
-      * No _ca stub needed (because we don't request CA-derived columns).
+    This is the recipe documented by FoldSeek: integer keys are aligned by
+    construction (key K is written for the same ID in all three TSVs) and
+    tsv2db writes the _ss files directly.
     """
     QUERY_DB_DIR.mkdir(parents=True, exist_ok=True)
     db_base = QUERY_DB_DIR / "queryDB"
@@ -787,7 +753,7 @@ def run_foldseek_easy_search(
     combined_query_db: Path,
     threads: int,
     evalue: float = 1.0,
-    max_seqs: int = 300,
+    max_seqs: int = FOLDSEEK_MAX_SEQS,
 ) -> bool:
     """
     Run a foldseek search against one target database.
@@ -825,7 +791,7 @@ def run_foldseek_easy_search(
 
     log(f"\n  Searching against {db_name} ({db_path})...")
 
-    # Per-DB format-output: only include taxid,taxname if the target DB has
+    # Per-DB format-output: only include taxid,taxname,taxlineage if the target DB has
     # a _taxonomy file.  Otherwise convertalis falls back to a global NCBI
     # taxdump and errors "names.dmp, nodes.dmp, merged.dmp ... could not be
     # found!".  We pad the resulting m8 to a uniform column count afterwards.
@@ -908,7 +874,7 @@ def run_foldseek_easy_search(
                     "--threads", str(threads),
                     # NOTE: do NOT add --db-load-mode 2 (mmap) here. With <index-size
                     # RAM the 196GB afdb50 index thrashes from disk (~6min -> >1h).
-                    # Keep default load-to-RAM + --mem 256G in steps/02_foldseek_3di.sh.
+                    # Keep default load-to-RAM + 256 GB (workflow.yaml resources: foldseek_search).
                 ]
                 if _sbsb_supported:
                     search_args += ["--sort-by-structure-bits", "0"]
@@ -926,7 +892,7 @@ def run_foldseek_easy_search(
                     "--format-output", fmt,
                 ], desc=f"convertalis ({db_name}, {tax_desc})")
 
-                # Normalize column count: pad with empty taxid/taxname if this
+                # Normalize column count: pad with empty tax columns if this
                 # DB has no taxonomy, so merged per-gene m8s have uniform layout.
                 if not has_tax:
                     _pad_m8_taxonomy(out_m8, n_target_cols)
@@ -944,11 +910,9 @@ def run_foldseek_easy_search(
                 # Fall through to easy-search approach
 
         # ---------- easy-search fallback (only viable on ProstT5 builds) ----------
-        # On FoldSeek 10.x without ProstT5 (e.g. the pharokka micromamba env),
-        # easy-search has NO usable 3Di entry point: --prostt5-input is absent
-        # and --seq-type was removed.  The createdb route above is the only
-        # path that works, so reaching this block is itself a problem -- we
-        # log it loudly.
+        # On FoldSeek 10.x without ProstT5, easy-search has no 3Di entry point
+        # (no --prostt5-input, no --seq-type): the createdb route above is the
+        # one that works, so reaching this block is logged.
         has_prostt5 = _detect_prostt5_support(foldseek_bin)
         query_fasta = str(QUERY_3DI_FASTA)
 
@@ -1009,7 +973,8 @@ def split_and_merge_hits(per_db_m8_files: list, raw_hits_dir: Path,
         if not lines:
             continue
         rows = []
-        # Pad each row to the DATA column count (LOCAL_COLS = 16).  The
+        # Pad each row to the DATA column count (LOCAL_COLS = 16; per-DB files
+        # from before taxlineage have 15, their lineage stays empty).  The
         # source_db tag is added as a separate column below, NOT padded in.
         # Using N_LOCAL_COLS here would mismatch the DataFrame columns and
         # raise ValueError.
@@ -1044,12 +1009,12 @@ def split_and_merge_hits(per_db_m8_files: list, raw_hits_dir: Path,
         .drop_duplicates(subset=["query", "accession"], keep="first")
         .drop(columns=["accession", "evalue_num"])
     )
-    # Rename to the final 17th column name
+    # Rename to the per-gene source_db column
     combined = combined.rename(columns={"_source_db": "source_db"})
     log(f"  After deduplication: {len(combined)} hits")
 
     # Write per-gene files (same filename convention as 02b: {gene_id}.m8)
-    # 17-column TSV: 16 data m8 columns + source_db
+    # 17-column TSV: LOCAL_COLS_OUT (source_db before taxlineage)
     n_written = 0
     for gene_id, group in combined.groupby("query"):
         out_path = raw_hits_dir / f"{gene_id}.m8"
@@ -1076,7 +1041,8 @@ def parse_local_m8_file(m8_path: Path, gene_id: str) -> pd.DataFrame:
       - 'qcov'   is fraction 0-1 (web API 'qcov_aa' is absolute residue count)
       - No 'lddt' column (dropped -- requires queryDB_ca which mmseqs2's
         createdb doesn't write; foldseek_scoring.py never reads it).
-      - Only 16 data columns + source_db tag = 17 (web API has 21).
+      - 13 core + taxid, taxname, source_db, taxlineage = 17 columns (web
+        API has 21).  Older per-gene files have 16 (no taxlineage).
     """
     content = m8_path.read_text().strip()
     if not content:
@@ -1159,28 +1125,39 @@ def parse_all_local_hits(raw_hits_dir: Path, gene_ids_in_scope: set,
     else:
         hits["qcov_aa"] = hits["qcov_frac"]  # keep as fraction if length unavailable
 
+    # ---- Hit domain (lineage > taxid via taxdump > organism-name keywords) ----
+    add_kingdom_columns(hits)
+    log(f"  Hit domain source: {kingdom_counts_log(hits)}")
+    if (hits["kingdom_source"] == "name").any() and not default_resolver().available:
+        log(f"  (no NCBI taxdump at {default_resolver().dir}: hits without a "
+            f"lineage use the organism-name keyword lists, which miss many "
+            f"eukaryotes; run `phagefactor databases --taxdump`)")
+
     # ---- Per-DB taxon filter (FOLDSEEK_TAXON_FILTER) -------------------------
-    # Applied before quality scoring.  For DBs with embedded taxonomy (e.g.
-    # afdb50) and a non-empty filter string, drop hits whose taxname indicates
-    # a eukaryote (or synthetic construct).  This removes false positive
-    # structural matches to eukaryotic folds early — before they influence
-    # top3 selection or composite scoring.
-    # Note: we use keyword-based eukaryote detection (fast, no taxdump needed)
-    # rather than exact taxid matching, which would require a full lineage lookup.
+    # Applied before quality scoring: for a DB with a filter, drop hits whose
+    # domain is known and not in the keep-list (2=Bacteria 2157=Archaea
+    # 10239=Viruses 2759=Eukaryota).  Hits of unknown domain (metagenome,
+    # unclassified) are kept.  This removes eukaryotic fold matches early,
+    # before they influence top3 selection or composite scoring.
     if FOLDSEEK_TAXON_FILTER:
         before = len(hits)
         keep_mask = pd.Series(True, index=hits.index)
         for db_name, filter_str in FOLDSEEK_TAXON_FILTER.items():
-            if not filter_str:
+            keep = _build_taxon_filter_set(filter_str)
+            if not keep:
                 continue  # no filter configured for this DB
+            unknown_ids = sorted(keep - set(DOMAIN_TAXIDS))
+            if unknown_ids:
+                log(f"  Taxon filter ({db_name}): only domain taxids "
+                    f"{sorted(DOMAIN_TAXIDS)} are supported; ignoring {unknown_ids}")
+            keep_k = {DOMAIN_TAXIDS[t] for t in keep if t in DOMAIN_TAXIDS}
             is_this_db = hits.get("foldseek_subdb", pd.Series("", index=hits.index)) == db_name
-            is_euka    = hits["taxname"].apply(_is_eukaryotic_taxname)
-            # Drop hits from this DB that are eukaryotic
-            keep_mask = keep_mask & ~(is_this_db & is_euka)
+            off_domain = hits["kingdom"].isin(set(KINGDOMS) - keep_k)
+            keep_mask = keep_mask & ~(is_this_db & off_domain)
         hits = hits[keep_mask].copy()
         n_dropped = before - len(hits)
         if n_dropped:
-            log(f"  Taxon filter: dropped {n_dropped} eukaryotic hits "
+            log(f"  Taxon filter: dropped {n_dropped} off-domain hits "
                 f"({', '.join(k for k,v in FOLDSEEK_TAXON_FILTER.items() if v)} DBs)")
 
     # Quality filter (mirrors parse_all_hits in 02b)
@@ -1208,11 +1185,8 @@ def parse_all_local_hits(raw_hits_dir: Path, gene_ids_in_scope: set,
     hits["promiscuous_fold_flag"] = _per_desc(_is_promiscuous_fold_hit).fillna(False).astype(bool)
     hits["eukaryotic_desc_flag"]  = _per_desc(_has_eukaryotic_description).fillna(False).astype(bool)
 
-    hits = hits.sort_values(
-        ["gene", "composite_score", "evalue"],
-        ascending=[True, False, True]
-    )
-    return hits
+    # sorts by composite_score; the phage boost can't lift a BORDERLINE hit over a GOOD one
+    return gate_phage_boost(hits)
 
 
 # =============================================================================
@@ -1248,8 +1222,8 @@ def main():
              "post-hoc, so changing this only affects what foldseek itself fetches."
     )
     parser.add_argument(
-        "--max_seqs", type=int, default=300,
-        help="Max hits to keep per query (default: 300)"
+        "--max_seqs", type=int, default=FOLDSEEK_MAX_SEQS,
+        help=f"Max candidates FoldSeek keeps per query (default: {FOLDSEEK_MAX_SEQS} from config)"
     )
     parser.add_argument(
         "--dbs", nargs="+", default=None,
@@ -1259,7 +1233,22 @@ def main():
         "--force", action="store_true",
         help="Re-run all steps even if output files exist"
     )
+    # Split-step flags (used by the Snakemake workflow, which runs step 02 as
+    # three rules so that a scoring/lexicon change re-runs only the cheap
+    # post-processing, never the hours-long search). Without a flag, all
+    # stages run in one go.
+    parser.add_argument(
+        "--targets_only", action="store_true",
+        help="Only (re)build gene_metadata.csv + targets/hypothetical_genes.csv, then exit"
+    )
+    parser.add_argument(
+        "--search_only", action="store_true",
+        help="Build the target list, query DB and per-DB m8 files, then exit "
+             "(no merge / parse / scoring)"
+    )
     args = parser.parse_args()
+    if sum([args.parse_only, args.targets_only, args.search_only]) > 1:
+        parser.error("--parse_only, --targets_only and --search_only are mutually exclusive")
 
     section("STEP 02d — LOCAL FOLDSEEK WITH PROSTT5 3di TOKENS")
 
@@ -1269,7 +1258,7 @@ def main():
 
     # ---- Check foldseek binary ----
     foldseek_bin = FOLDSEEK_CMD
-    if not args.parse_only:
+    if not (args.parse_only or args.targets_only):
         if not shutil.which(foldseek_bin):
             log(f"ERROR: '{foldseek_bin}' not found on PATH.")
             log("  Install foldseek: https://github.com/steineggerlab/foldseek#installation")
@@ -1332,7 +1321,7 @@ def main():
         GENE_METADATA_CSV.parent.mkdir(parents=True, exist_ok=True)
 
         if not PHOLD_AA_FASTA.exists():
-            log(f"ERROR: {PHOLD_AA_FASTA} not found. Run steps/01c_merge.sh first.")
+            log(f"ERROR: {PHOLD_AA_FASTA} not found. Run the phold merge first.")
             sys.exit(1)
 
         # phold --prefix <NAME> writes headers like '>CJIE1:LOCUS_CDS_0001';
@@ -1444,6 +1433,10 @@ def main():
         log("  Re-run with --force to rebuild the gene list.")
         sys.exit(1)
 
+    if args.targets_only:
+        log(f"--targets_only: target list ready ({HYPO_GENE_LIST}); exiting.")
+        return
+
     # ---- Select databases ----
     if args.dbs:
         dbs_to_search = {k: v for k, v in FOLDSEEK_LOCAL_DBS.items() if k in args.dbs}
@@ -1515,6 +1508,16 @@ def main():
         if not per_db_m8_files:
             log("No successful searches.  Exiting.")
             sys.exit(1)
+
+        if args.search_only:
+            if failed_dbs:
+                # The search output must be complete: a missing DB would be
+                # cached as a finished search and never retried.
+                log(f"--search_only: {len(failed_dbs)} database search(es) failed; exiting with error.")
+                sys.exit(1)
+            log(f"--search_only: {len(per_db_m8_files)} per-DB m8 file(s) in "
+                f"{PER_DB_HITS_DIR}; exiting before merge/parse.")
+            return
 
     else:
         # Parse mode: collect all existing per-DB m8 files
@@ -1607,9 +1610,10 @@ def main():
     # ---- Write outputs ----
     best.to_csv(str(FOLDSEEK_3DI_BEST), index=False)
     top3.to_csv(str(FOLDSEEK_3DI_TOP3), index=False)
-    hits.drop(columns=["informative"], errors="ignore").to_csv(
-        str(FOLDSEEK_3DI_ALL), index=False
-    )
+    # all_hits.csv is for inspection: the top ALL_HITS_PER_GENE hits per gene by
+    # composite score (hits are already ranked).
+    hits.groupby("gene", sort=False).head(ALL_HITS_PER_GENE).drop(
+        columns=["informative"], errors="ignore").to_csv(str(FOLDSEEK_3DI_ALL), index=False)
 
     log(f"\nOutputs written:")
     log(f"  Best hit : {FOLDSEEK_3DI_BEST}")

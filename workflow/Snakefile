@@ -1,0 +1,858 @@
+# =============================================================================
+# phageFACTor — Snakemake workflow
+# =============================================================================
+# Snakemake decides what has to (re)run from the files themselves:
+#   * a new analysis      -> everything runs;
+#   * an edited curation rule / lexicon / threshold -> only the steps that use it;
+#   * a crashed run       -> relaunch the same command, it resumes.
+#
+# Launch from a PROJECT dir (holds config/; `phagefactor init <dir>` makes one;
+# a git clone of the repo is a project dir too):
+#   phagefactor run [-n]               # this machine      (= snakemake --profile profiles/local)
+#   phagefactor run --slurm [-n]       # SLURM, login node (= snakemake --profile profiles/slurm)
+# Settings, later wins: the defaults shipped with the code (config/), the user's
+# machine settings (~/.config/phagefactor/settings.yaml), the project's
+# config/workflow.yaml + config/config.yaml, then --config. Guide: docs/configure.md
+#
+# Design notes (read before editing)
+# ----------------------------------
+# * The code dir is never written to (it can be a read-only conda install):
+#   runs, settings and inputs live in the project dir.
+# * Paths come from scripts/lib/config.py — the module every analysis script
+#   imports — so the Snakefile and the scripts can never disagree on a path.
+# * Tool commands are prefixed with $PF_TOOLS / $PF_PHYNTENY
+#   ("micromamba run -n <env>", or empty when the tools are in the current env)
+#   and scripts are addressed as $PHAGEFACTOR_HOME/scripts/...: both are
+#   expanded by bash, NOT by Snakemake, so moving the code or renaming an env
+#   does not change the rule code and does not trigger reruns. Database
+#   locations and phold options (GPU/CPU, remote) are passed the same way
+#   ($PF_PHAROKKA_DB, $PF_PHOLD_*), so moving the databases re-runs nothing.
+# * Step 02 is three rules: targets (cheap) -> search (hours, 256 GB) ->
+#   parse (cheap). Scoring code and config.yaml thresholds are inputs/params of
+#   `foldseek_parse` only, so editing them never re-runs the search.
+# * Snakemake deletes a rule's outputs before re-running it. The ".done"
+#   markers are declared as outputs, so a re-run is never skipped by a marker.
+# =============================================================================
+
+import os
+import sys
+import json
+import shutil
+import subprocess
+import importlib
+from pathlib import Path
+
+import yaml
+from snakemake.utils import min_version
+from snakemake.exceptions import WorkflowError
+
+min_version("8.20")
+
+CODE = Path(workflow.basedir).resolve().parent
+# Project dir: where snakemake is launched (inherited by cluster jobs).
+PROJECT = Path(os.environ.get("PHAGEFACTOR_PROJECT") or os.getcwd()).resolve()
+os.environ["PHAGEFACTOR_PROJECT"] = str(PROJECT)
+
+
+def project_or_default(name):
+    f = PROJECT / "config" / name
+    return f if f.is_file() else CODE / "config" / name
+
+
+def _yaml(path):
+    try:
+        return (yaml.safe_load(Path(path).read_text()) or {}) if Path(path).is_file() else {}
+    except (OSError, yaml.YAMLError) as e:
+        raise WorkflowError(f"cannot read {path}: {e}")
+
+
+def _merge(base, over):
+    """Recursive merge; null values in `over` leave `base` unchanged."""
+    out = dict(base)
+    for k, v in (over or {}).items():
+        if v is None:
+            continue
+        out[k] = _merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
+
+
+USER_SETTINGS = (Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+                 / "phagefactor" / "settings.yaml")
+# code defaults < user (machine) settings < project < --config
+_layered = _merge(_merge(_yaml(CODE / "config" / "workflow.yaml"), _yaml(USER_SETTINGS)),
+                  _yaml(PROJECT / "config" / "workflow.yaml"))
+_cli = dict(config)
+config.clear()
+config.update(_merge(_layered, _cli))
+SCI_FILE = Path(os.environ.get("PHAGEFACTOR_CONFIG") or project_or_default("config.yaml")).resolve()
+os.environ["PHAGEFACTOR_CONFIG"] = str(SCI_FILE)
+
+
+# -----------------------------------------------------------------------------
+# Settings: --config > workflow.yaml > environment variable > default
+# -----------------------------------------------------------------------------
+def setting(key, env=None, default=None, cast=str):
+    v = config.get(key)
+    if v is None and env:
+        v = os.environ.get(env)
+    if v is None or (isinstance(v, str) and v.strip() == "" and default is not None
+                     and cast is not str):
+        v = default
+    if v is None:
+        return None
+    if cast is bool:
+        return v if isinstance(v, bool) else str(v).strip().lower() in ("1", "true", "yes", "on")
+    return cast(v)
+
+
+def _abs(p):
+    """Absolute path; a relative one is taken relative to the project dir."""
+    p = Path(os.path.expanduser(str(p)))
+    return str((p if p.is_absolute() else PROJECT / p).resolve())
+
+
+os.environ["PHAGEFACTOR_HOME"] = str(CODE)
+for _key, _env in (("input_dir", "PHAGEFACTOR_INPUT"), ("run_dir", "PHAGEFACTOR_RUN_DIR")):
+    _v = setting(_key, _env)
+    if _v:
+        os.environ[_env] = _abs(_v)
+    # else: config.yaml paths.input_dir / paths.run_dir (relative to the project dir)
+
+# Single source of truth for paths: the scripts' own config module.
+sys.path.insert(0, str(CODE / "scripts" / "lib"))
+PF = importlib.import_module("config")          # NOT named `config` (Snakemake's dict)
+
+RUN_DIR   = Path(PF.RUN_DIR)
+INPUT_DIR = Path(PF.INPUT_DIR)
+os.environ["PHAGEFACTOR_INPUT"] = str(INPUT_DIR)
+os.environ["PHAGEFACTOR_RUN_DIR"] = str(RUN_DIR)
+if RUN_DIR == CODE or CODE in RUN_DIR.parents and not os.access(CODE, os.W_OK):
+    raise WorkflowError(f"run dir {RUN_DIR} is inside the read-only code dir {CODE}: "
+                        "run from a project dir (phagefactor init <dir>)")
+workdir: str(RUN_DIR)
+
+SEARCH_MODE = setting("search_mode", "SEARCH_MODE", "local")
+if SEARCH_MODE not in ("local", "webapi", "none"):
+    raise WorkflowError(f"search_mode must be local|webapi|none, got '{SEARCH_MODE}'")
+
+_dbs = config.get("foldseek_dbs")
+if _dbs is None:
+    _dbs = os.environ.get("FOLDSEEK_DBS", "")
+FOLDSEEK_DBS = sorted(_dbs.split() if isinstance(_dbs, str) else [str(d) for d in _dbs])
+
+RUN_PHYNTENY = setting("phynteny", "RUN_PHYNTENY", True, bool)   # ON by default; flagged at start/end
+BATCH_SIZE   = setting("protein_batch_size", "PROTEIN_BATCH_SIZE", 50, int)
+PHOLD_GPU    = setting("phold_gpu", "PHOLD_USE_GPU", False, bool)
+PHOLDP_GPU   = setting("phold_proteins_gpu", "PHOLD_PROTEINS_USE_GPU", False, bool)
+PHOLD_MODE   = setting("phold_mode", "PHOLD_MODE", "")
+
+# --- software environments -----------------------------------------------------
+def find_env_runner():
+    """`<micromamba|conda> run` prefix. micromamba is looked up as a BINARY: after
+    `eval "$(micromamba shell hook)"` it is a bash function, which job shells
+    (compute nodes) do not inherit."""
+    cand = [setting("micromamba", None, ""), os.environ.get("MAMBA_EXE", ""),
+            shutil.which("micromamba") or "",
+            str(Path(os.environ.get("MAMBA_ROOT_PREFIX", Path.home() / ".mamba")) / "bin" / "micromamba")]
+    for c in cand:
+        if c and (os.path.isfile(c) or shutil.which(c)):
+            return f"{os.path.abspath(c) if os.path.isfile(c) else shutil.which(c)} run -n"
+    conda_bin = os.environ.get("CONDA_EXE") or shutil.which("conda")
+    return f"{conda_bin} run --no-capture-output -n" if conda_bin else None
+
+
+def env_prefix(name, tools, fallback):
+    """'' = run in the current env; else '<runner> <env>'. 'auto': the current
+    env when it holds the tools (conda install), else the env named `fallback`."""
+    if name in (None, "auto"):
+        name = "" if all(shutil.which(t) for t in tools) else fallback
+    if not name:
+        return ""
+    if not RUNNER:
+        raise WorkflowError(
+            f"environment '{name}' requested but no micromamba or conda binary was found "
+            "(looked at: workflow.yaml `micromamba`, $MAMBA_EXE, PATH, "
+            "$MAMBA_ROOT_PREFIX/bin/micromamba, $CONDA_EXE). Set `micromamba: /path/to/micromamba` "
+            "in config/workflow.yaml, or `tools_env: \"\"` to use the active environment.")
+    return f"{RUNNER} {name}"
+
+
+RUNNER = find_env_runner()
+os.environ["PF_TOOLS"] = env_prefix(setting("tools_env", "MAMBA_ENV", "auto"),
+                                    ("pharokka.py", "phold", "foldseek"), "phagefactor")
+os.environ["PF_PHYNTENY"] = (env_prefix(setting("phynteny_env", "PHYNTENY_ENV", "auto"),
+                                        ("phynteny_transformer",), "phynteny")
+                             if RUN_PHYNTENY else "")
+TOOLS_LABEL = os.environ["PF_TOOLS"].split()[-1] if os.environ["PF_TOOLS"] else "(current)"
+
+# shared model cache for phynteny (ESM2, ~2.5 GB), one for all run dirs
+PHYNTENY_CACHE = str(Path(os.path.expanduser(setting(
+    "phynteny_cache", "PHYNTENY_CACHE", str(Path.home() / ".cache" / "phagefactor" / "phynteny")))).resolve())
+
+# phold options, read by the shell commands (not part of the rule code)
+if PHOLD_MODE == "remote":        # ProstT5 on the Foldseek server, Foldseek search local
+    os.environ["PF_PHOLD_CMD"], os.environ["PF_PHOLD_ARGS"] = "remote", ""
+else:
+    os.environ["PF_PHOLD_CMD"] = "run"
+    # --autotune needs a GPU (phold fails with it on CPU)
+    os.environ["PF_PHOLD_ARGS"] = "--foldseek_gpu --autotune" if PHOLD_GPU else "--cpu"
+os.environ["PF_PHOLDP_GPU"] = "1" if PHOLDP_GPU else "0"
+os.environ["PF_PHOLD_DB"] = f"-d {PF.PHOLD_DB}" if Path(PF.PHOLD_DB).is_dir() else ""
+os.environ["PF_PHAROKKA_DB"] = str(PF.PHAROKKA_DB)
+_scratch = setting("scratch_tmpdir", "SCRATCH_TMPDIR", "")
+if _scratch:
+    os.environ["SCRATCH_TMPDIR"] = _scratch
+
+# --- input mode -----------------------------------------------------------------
+INPUT_MODE = setting("input_mode", "INPUT_MODE", "auto")
+if INPUT_MODE == "auto":
+    # --redetect: decide from the FASTAs as they are now, never from a cached
+    # <input>/.input_type; --output devnull: write nothing into the input dir.
+    _det = subprocess.run(
+        [sys.executable, str(CODE / "scripts" / "lib" / "detect_input_type.py"),
+         "--fasta-dir", str(PF.FASTA_DIR), "--redetect", "--output", os.devnull],
+        capture_output=True, text=True)
+    if _det.returncode != 0:
+        raise WorkflowError(
+            "Input auto-detection failed:\n" + _det.stderr.strip() +
+            "\nSet it explicitly: --config input_mode=genome|protein|pangenome")
+    INPUT_MODE = _det.stdout.strip().splitlines()[-1].strip()
+if INPUT_MODE not in ("genome", "protein", "pangenome"):
+    raise WorkflowError(f"input_mode must be genome|protein|pangenome, got '{INPUT_MODE}'")
+PROTEIN_LIKE = INPUT_MODE in ("protein", "pangenome")
+
+
+# -----------------------------------------------------------------------------
+# Paths (all from scripts/lib/config.py)
+# -----------------------------------------------------------------------------
+def P(x):
+    return str(x)
+
+LOGS         = "logs/smk"                      # relative to the run dir
+PHOLD_COMB   = Path(PF.PHOLD_COMB_DIR)
+COMBINED     = [P(PF.PHOLD_COMBINED_TSV), P(PF.PHOLD_3DI_FASTA), P(PF.PHOLD_AA_FASTA)]
+TARGETS_CSV  = P(PF.HYPO_GENE_LIST)
+GENE_META    = P(PF.GENE_METADATA_CSV)
+FS3DI        = Path(PF.FOLDSEEK_3DI_DIR)
+PER_DB_DIR   = P(FS3DI / "per_db_hits")
+BEST_HIT     = P(PF.FOLDSEEK_BEST_HIT)
+TOP3         = P(PF.FOLDSEEK_TOP3)
+COMPARISON   = P(Path(PF.COMPARISON_DIR) / "comparison_per_gene.csv")
+CURATED      = P(Path(PF.CURATION_DIR) / "curated_annotations.csv")
+FINAL_TABLE  = P(PF.FINAL_ANNOTATIONS_TABLE)
+UPDATED_GB   = P(PF.UPDATED_GB)
+REPORT       = P(Path(PF.OUTPUT_DIR) / "report.html")
+PHYNTENY_DIR = Path(PF.PHYNTENY_DIR)
+PHYNTENY_DONE = P(PHYNTENY_DIR / ".phynteny_done")
+BATCH_LIST   = P(PF.PROTEIN_BATCH_LIST)
+BATCH_DIR    = Path(PF.PROTEIN_BATCH_DIR)
+PROT_COMBINED_FAA = P(PF.PROTEIN_COMBINED_FAA)
+PANG_DIR     = Path(PF.SPLIT_DIR) / "pangenome"
+PANG_ID_MAP  = P(PANG_DIR / "pangenome_id_map.csv")
+PANG_REF     = P(Path(PF.OUTPUT_DIR) / "pangenome_reference.csv")
+OVERRIDES    = INPUT_DIR / "overrides.tsv"
+# Precomputed sub-mode (protein mode with host genome + window coordinates):
+# read by 05_build_output.py to build the GenBank, so they are curate inputs.
+PRECOMPUTED  = [str(f) for f in (PF.SOURCE_GENOME_FASTA, PF.PROPHAGE_WINDOWS_CSV,
+                                 PF.RICH_GENE_METADATA_CSV) if Path(f).is_file()]
+
+
+def code(*names):
+    """Script files whose CONTENT a rule depends on: editing one re-runs the rule.
+    lib/config.py (paths + defaults read by every script) is always included."""
+    return [str(CODE / "scripts" / n) for n in ("lib/config.py", *names)]
+
+
+# config.yaml sections as rule params: changing a threshold re-runs the rules
+# that read it (Snakemake 'params' rerun trigger), and only those.
+with open(SCI_FILE) as _fh:
+    SCI = yaml.safe_load(_fh)
+_fs = dict(SCI.get("foldseek", {}))
+PARAMS_SEARCH = json.dumps({"evalue_max": _fs.get("evalue_max"), "dbs": FOLDSEEK_DBS,
+                            "max_seqs": _fs.get("max_seqs"),
+                            "local_dbs": SCI.get("databases", {}).get("foldseek_local_dbs"),
+                            "prostt5_mask_threshold": _fs.get("prostt5_mask_threshold")},
+                           sort_keys=True)
+PARAMS_PARSE = json.dumps({k: v for k, v in _fs.items() if k not in ("threads", "api_url")}
+                          | {"host_genus": PF.HOST_GENUS,
+                             "taxon_filter": SCI.get("databases", {}).get("foldseek_taxon_filter"),
+                             # installing the NCBI taxdump re-parses the hits (hit domains)
+                             "taxdump": (Path(PF.TAXDUMP_DIR) / "nodes.dmp").is_file()},
+                          sort_keys=True, default=str)
+PARAMS_COMPARE = json.dumps(SCI.get("compare", {}) | {"host_genus": PF.HOST_GENUS},
+                            sort_keys=True, default=str)
+PARAMS_CURATE = json.dumps({"compare": SCI.get("compare", {}), "curate": SCI.get("curate", {}),
+                            "project": SCI.get("project", {}),
+                            "precomputed": SCI.get("precomputed", {}),
+                            "host_genus": PF.HOST_GENUS}, sort_keys=True, default=str)
+
+
+# -----------------------------------------------------------------------------
+# Resources (config/workflow.yaml `resources:` + slurm_* settings)
+# -----------------------------------------------------------------------------
+PARTITION = setting("slurm_partition", "SLURM_PARTITION", "common")
+QOS       = setting("slurm_qos", "SLURM_QOS", "fast")
+QOS_LONG  = setting("slurm_qos_long", None, "normal")
+ACCOUNT   = setting("slurm_account", "SLURM_ACCOUNT", "")
+GPU_PART  = setting("slurm_gpu_partition", "SLURM_GPU_PARTITION", "gpu")
+GPU_QOS   = setting("slurm_gpu_qos", "SLURM_GPU_QOS", "gpu")
+GPU_GRES  = setting("slurm_gpu_gres", None, "gpu:1")
+EMAIL     = setting("slurm_email", "SLURM_EMAIL", "")
+MAIL_TYPE = setting("slurm_mail_type", "SLURM_MAIL_TYPE", "FAIL")
+RES       = config.get("resources", {}) or {}
+
+
+def res(step, gpu=False, qos=None):
+    r = RES.get(step, {})
+    out = dict(mem_mb=int(r.get("mem_mb", 16000)), runtime=int(r.get("runtime", 60)),
+               cpus_per_task=int(r.get("cpus", 1)),
+               slurm_partition=GPU_PART if gpu else PARTITION,
+               qos=GPU_QOS if gpu else (qos or QOS))
+    if gpu:
+        out["gres"] = GPU_GRES
+    if r.get("constraint"):          # node features, e.g. avx512
+        out["constraint"] = str(r["constraint"])
+    if ACCOUNT:
+        out["slurm_account"] = ACCOUNT
+    # one mail per JOB: none for the per-prophage / per-batch arrays
+    if EMAIL and step not in ("pharokka", "phold", "phold_proteins"):
+        out["slurm_extra"] = f"--mail-user={EMAIL} --mail-type={MAIL_TYPE}"
+    return out
+
+
+def threads_of(step):
+    return int(RES.get(step, {}).get("cpus", 1))
+
+
+# -----------------------------------------------------------------------------
+# Inputs that depend on the mode
+# -----------------------------------------------------------------------------
+PROPHAGES = list(PF.PROPHAGE_NAMES)
+if INPUT_MODE == "genome" and not PROPHAGES:
+    raise WorkflowError(f"genome mode: {INPUT_DIR / 'prophage_list.txt'} is missing or empty")
+
+if INPUT_MODE == "pangenome":
+    _nt = setting("pangenome_nt_fasta", "PANGENOME_NT_FASTA", "")
+    if not _nt:
+        for d in (INPUT_DIR / "pangenome_nt", Path(PF.FASTA_DIR)):
+            hits = sorted(f for ext in ("*.fa", "*.fna", "*.fasta") for f in d.glob(ext)) if d.is_dir() else []
+            if hits:
+                _nt = str(hits[0])
+                break
+    if not _nt or not Path(_nt).is_file():
+        raise WorkflowError("pangenome mode: no nucleotide FASTA found (set pangenome_nt_fasta)")
+    PANG_NT = _abs(_nt)
+    PANG_FAA = P(PANG_DIR / "fasta" / (Path(PANG_NT).stem + "_proteins.faa"))
+    PROTEIN_FASTA_DIR = str(PANG_DIR / "fasta")
+    os.environ["PANGENOME_ID_MAP"] = PANG_ID_MAP
+else:
+    PROTEIN_FASTA_DIR = os.environ.get("PROTEIN_FASTA_DIR") or str(PF.FASTA_DIR)
+
+
+def protein_inputs():
+    if INPUT_MODE == "pangenome":
+        return [PANG_FAA]
+    d = Path(PROTEIN_FASTA_DIR)
+    return sorted(str(p) for p in d.iterdir()
+                  if p.is_file() and p.suffix.lower() in (".faa", ".fa", ".fasta"))
+
+
+def final_targets():
+    t = [FINAL_TABLE, REPORT]
+    if RUN_PHYNTENY:
+        t.append(PHYNTENY_DONE)
+    if INPUT_MODE == "pangenome":
+        t.append(PANG_REF)
+    return t
+
+
+# -----------------------------------------------------------------------------
+# Preflight: the tools and databases of the steps that still have work to do.
+# Runs once in the main process (also with -n), never inside a cluster job.
+# Skip with --config preflight=false.
+# -----------------------------------------------------------------------------
+def _missing_tools(tools):
+    if not tools:
+        return []
+    if not os.environ["PF_TOOLS"]:
+        return [t for t in tools if not shutil.which(t)]
+    probe = "for t in " + " ".join(tools) + "; do command -v $t >/dev/null || echo $t; done"
+    r = subprocess.run(os.environ["PF_TOOLS"].split() + ["sh", "-c", probe],
+                       capture_output=True, text=True, timeout=300)
+    if r.returncode != 0:
+        return [f"(environment unusable: {r.stderr.strip().splitlines()[-1] if r.stderr.strip() else r.returncode})"]
+    return r.stdout.split()
+
+
+def preflight():
+    pending = lambda marker: not Path(RUN_DIR, marker).exists()
+    tools, problems = [], []
+    if INPUT_MODE == "genome":
+        if any(pending(Path(PF.PHAROKKA_OUT_DIR) / p / ".pharokka_done") for p in PROPHAGES):
+            tools.append("pharokka.py")
+            if not Path(PF.PHAROKKA_DB).is_dir():
+                problems.append(f"pharokka database not found: {PF.PHAROKKA_DB}")
+        if any(pending(Path(PF.PHOLD_OUT_DIR) / p / ".phold_done") for p in PROPHAGES):
+            tools.append("phold")
+    elif pending(PF.PHOLD_COMBINED_TSV):
+        tools.append("phold")
+    if SEARCH_MODE == "local" and pending(PER_DB_DIR):
+        tools.append("foldseek")
+        dbs = {n: d for n, d in PF.FOLDSEEK_LOCAL_DBS.items() if not FOLDSEEK_DBS or n in FOLDSEEK_DBS}
+        if not any(Path(str(d) + ".dbtype").is_file() for d in dbs.values()):
+            problems.append("no FoldSeek database found: " + ", ".join(str(d) for d in dbs.values()))
+    miss = _missing_tools(tools)
+    if miss:
+        problems.append(f"not found in tool environment '{TOOLS_LABEL}': {' '.join(miss)}")
+    if problems:
+        raise WorkflowError(
+            "preflight failed:\n  - " + "\n  - ".join(problems) +
+            f"\n  database root: {PF.DB_ROOT}"
+            f"\n  settings: {PF.CONFIG_FILE}; user settings: {USER_SETTINGS}"
+            f"{'' if USER_SETTINGS.is_file() else ' (missing)'}"
+            "\n  Set db_root / tools_env there (docs/configure.md), or skip this check "
+            "with --config preflight=false.")
+
+
+if not os.environ.get("SLURM_JOB_ID") and setting("preflight", None, True, bool):
+    preflight()
+
+
+# Early abort for per-prophage / per-batch jobs: once FAIL_LIMIT jobs of a rule
+# have failed and none has succeeded, the remaining ones exit at once.
+FAIL_LIMIT = 5
+FAIL_DIR = f"{LOGS}/.failures"
+
+
+def guarded(rule_name, key, body):
+    """Shell for one array job: skip when the rule is failing everywhere,
+    record the outcome otherwise."""
+    d = f"{FAIL_DIR}/{rule_name}"
+    return (
+        f"mkdir -p {d}; "
+        f"nf=$(ls {d} | grep -c '\\.fail$' || true); ns=$(ls {d} | grep -c '\\.ok$' || true); "
+        f"if [ $nf -ge {FAIL_LIMIT} ] && [ $ns -eq 0 ]; then "
+        f"echo \"skipped: $nf {rule_name} jobs failed and none succeeded; see their logs in {LOGS}/{rule_name}/\" "
+        f"| tee {{log}} >&2; "
+        f"exit 1; fi; "
+        f"if {body}; then touch {d}/{key}.ok; else touch {d}/{key}.fail; exit 1; fi"
+    )
+
+
+onstart:
+    shutil.rmtree(FAIL_DIR, ignore_errors=True)
+    print(f"[phageFACTor] project: {PROJECT}", file=sys.stderr)
+    print(f"[phageFACTor] input : {INPUT_DIR}", file=sys.stderr)
+    print(f"[phageFACTor] run   : {RUN_DIR}", file=sys.stderr)
+    print(f"[phageFACTor] mode  : {INPUT_MODE}   search: {SEARCH_MODE}   "
+          f"env: {TOOLS_LABEL}", file=sys.stderr)
+    if RUN_PHYNTENY:
+        print(f"[phageFACTor] PHYNTENY: ON (default) -> {PHYNTENY_DIR}/final_annotations_integrated.csv"
+              f"   (skip with --config phynteny=false)", file=sys.stderr)
+    else:
+        print("[phageFACTor] PHYNTENY: OFF", file=sys.stderr)
+
+
+onsuccess:
+    if Path(REPORT).is_file():
+        print(f"[phageFACTor] REPORT: {REPORT}  (open in a browser)", file=sys.stderr)
+    if RUN_PHYNTENY:
+        _log = Path(RUN_DIR) / LOGS / "phynteny.log"
+        _txt = _log.read_text(errors="ignore") if _log.is_file() else ""
+        if "[SKIP]" in _txt:
+            _why = [l for l in _txt.splitlines() if "[SKIP]" in l][0]
+            print(f"[phageFACTor] PHYNTENY WAS SKIPPED: {_why}", file=sys.stderr)
+        elif (PHYNTENY_DIR / "final_annotations_integrated.csv").is_file():
+            print(f"[phageFACTor] PHYNTENY RAN: {PHYNTENY_DIR}/final_annotations_integrated.csv "
+                  f"(final table + phynteny categories + synteny hints)", file=sys.stderr)
+
+
+# =============================================================================
+# Target
+# =============================================================================
+rule all:
+    localrule: True
+    input: final_targets()
+
+
+# =============================================================================
+# GENOME MODE: pharokka -> phold (one job per prophage) -> merge
+# =============================================================================
+rule pharokka:
+    input:
+        fasta = str(Path(PF.FASTA_DIR) / "{prophage}.fasta"),
+    output:
+        gbk  = str(Path(PF.PHAROKKA_OUT_DIR) / "{prophage}" / "{prophage}.gbk"),
+        done = str(Path(PF.PHAROKKA_OUT_DIR) / "{prophage}" / ".pharokka_done"),
+    threads: threads_of("pharokka")
+    resources: **res("pharokka")
+    log: f"{LOGS}/pharokka/{{prophage}}.log"
+    shell:
+        # default gene caller Phanotate (not --fast/pyrodigal-gv): more small phage ORFs
+        guarded("pharokka", "{wildcards.prophage}",
+            "( t=${{SCRATCH_TMPDIR:-${{TMPDIR:-/tmp}}}}; mkdir -p $t; export TMPDIR=$(mktemp -d $t/pf_pharokka.XXXXXX); "
+            "  trap 'rm -rf $TMPDIR' EXIT; "
+            "  test -d $PF_PHAROKKA_DB || {{ echo \"pharokka database not found: $PF_PHAROKKA_DB "
+            "(phagefactor databases --pharokka, or databases.pharokka_db in config.yaml)\"; exit 1; }}; "
+            # headers reduced to the sequence id, ':' -> '_' (phold rejects colons in the GenBank)
+            "  sed -E '/^>/{{s/[[:space:]].*//; s/:/_/g}}' {input.fasta} > $TMPDIR/input.fasta; "
+            "  $PF_TOOLS pharokka.py -i $TMPDIR/input.fasta -o $(dirname {output.gbk}) -d $PF_PHAROKKA_DB "
+            "    -t {threads} -p {wildcards.prophage} -f "
+            ") > {log} 2>&1 && test -s {output.gbk}") + "; touch {output.done}"
+
+
+rule phold:
+    input:
+        gbk = rules.pharokka.output.gbk,
+    output:
+        done = str(Path(PF.PHOLD_OUT_DIR) / "{prophage}" / ".phold_done"),
+    threads: threads_of("phold")
+    resources: **res("phold", gpu=PHOLD_GPU)
+    log: f"{LOGS}/phold/{{prophage}}.log"
+    shell:
+        # $PF_PHOLD_CMD: run | remote; $PF_PHOLD_ARGS: --cpu | --foldseek_gpu --autotune;
+        # $PF_PHOLD_DB: -d <db_root>/phold_db when that folder exists
+        guarded("phold", "{wildcards.prophage}",
+            "( t=${{SCRATCH_TMPDIR:-${{TMPDIR:-/tmp}}}}; mkdir -p $t; export TMPDIR=$(mktemp -d $t/pf_phold.XXXXXX); "
+            "  trap 'rm -rf $TMPDIR' EXIT; "
+            "  $PF_TOOLS phold $PF_PHOLD_CMD -i {input.gbk} -o $(dirname {output.done}) -t {threads} "
+            "    --prefix {wildcards.prophage} -f $PF_PHOLD_ARGS $PF_PHOLD_DB "
+            ") > {log} 2>&1") + "; touch {output.done}"
+
+
+if INPUT_MODE == "genome":
+    rule phold_merge:
+        input:
+            expand(rules.phold.output.done, prophage=PROPHAGES),
+        output:
+            COMBINED,
+        threads: threads_of("phold_merge")
+        resources: **res("phold_merge")
+        log: f"{LOGS}/phold_merge.log"
+        shell:
+            "$PF_TOOLS python3 $PHAGEFACTOR_HOME/scripts/01c_merge_phold.py > {log} 2>&1"
+
+
+# =============================================================================
+# PROTEIN / PANGENOME MODE: [translate] -> split -> phold per batch -> merge
+# =============================================================================
+if INPUT_MODE == "pangenome":
+    rule pangenome_translate:
+        input:
+            nt = PANG_NT,
+        output:
+            faa    = PANG_FAA,
+            id_map = PANG_ID_MAP,
+        params:
+            table  = setting("pangenome_table", "PANGENOME_TABLE", 11, int),
+            prefix = setting("pangenome_prefix", "PANGENOME_PREFIX", "pang_"),
+        log: f"{LOGS}/pangenome_translate.log"
+        shell:
+            "$PF_TOOLS python3 $PHAGEFACTOR_HOME/scripts/00n_translate_pangenome.py "
+            "--in {input.nt} --out-faa {output.faa} --id-map {output.id_map} "
+            "--table {params.table} --prefix {params.prefix} --no-input-type > {log} 2>&1"
+
+
+if PROTEIN_LIKE:
+    checkpoint split_proteins:
+        input:
+            protein_inputs(),
+        output:
+            batch_list = BATCH_LIST,
+            combined   = PROT_COMBINED_FAA,
+        params:
+            batch_size = BATCH_SIZE,
+            fasta_dir  = PROTEIN_FASTA_DIR,
+        threads: 1
+        resources: **res("split_proteins")
+        log: f"{LOGS}/split_proteins.log"
+        shell:
+            # Snakemake removed the batch list, so 00p always re-splits (its own
+            # "already up to date" shortcut only compares batch COUNTS).
+            "PROTEIN_BATCH_SIZE={params.batch_size} PROTEIN_FASTA_DIR={params.fasta_dir} "
+            "$PF_TOOLS python3 $PHAGEFACTOR_HOME/scripts/00p_split_protein_batches.py > {log} 2>&1"
+
+    rule phold_proteins:
+        input:
+            # NOT the batch list: its content changes whenever the batch COUNT
+            # changes, which would re-run every batch. A batch re-runs only when
+            # its own FASTA changes.
+            faa = str(BATCH_DIR / "{batch}.faa"),
+        output:
+            done = str(Path(PF.PHOLD_OUT_DIR) / "proteins" / "batches" / "{batch}" / ".batch_done"),
+        params:
+            bdir = str(Path(PF.PHOLD_OUT_DIR) / "proteins" / "batches" / "{batch}"),
+        threads: threads_of("phold_proteins")
+        resources: **res("phold_proteins", gpu=PHOLDP_GPU)
+        log: f"{LOGS}/phold_proteins/{{batch}}.log"
+        shell:
+            # proteins-predict (ProstT5 -> 3Di) then proteins-compare. GPU only when
+            # requested AND visible to torch; --autotune is GPU-only.
+            guarded("phold_proteins", "{wildcards.batch}",
+            "( t=${{SCRATCH_TMPDIR:-${{TMPDIR:-/tmp}}}}; mkdir -p $t; export TMPDIR=$(mktemp -d $t/pf_pholdp.XXXXXX); "
+            "  trap 'rm -rf $TMPDIR' EXIT; "
+            "  gpu=$PF_PHOLDP_GPU; "
+            "  if [ $gpu = 1 ] && ! $PF_TOOLS python3 -c 'import sys, torch; "
+            "sys.exit(not torch.cuda.is_available())' 2>/dev/null; then "
+            "    echo 'GPU requested but not visible to torch: CPU'; gpu=0; fi; "
+            "  if [ $gpu = 1 ]; then pred='--autotune'; else pred='--batch_size 1 --cpu'; fi; "
+            "  if [ $PF_PHOLDP_GPU = 1 ]; then comp='--foldseek_gpu'; else comp=''; fi; "
+            "  $PF_TOOLS phold proteins-predict -i {input.faa} -o {params.bdir}/predictions "
+            "    -t {threads} $pred -f $PF_PHOLD_DB; "
+            "  $PF_TOOLS phold proteins-compare -i {input.faa} "
+            "    --predictions_dir {params.bdir}/predictions -o {params.bdir}/compare "
+            "    -t {threads} $comp -f $PF_PHOLD_DB "
+            ") > {log} 2>&1") + "; touch {output.done}"
+
+    def all_batch_markers(wildcards):
+        bl = checkpoints.split_proteins.get().output.batch_list
+        names = [l.strip() for l in open(bl) if l.strip()]
+        return expand(rules.phold_proteins.output.done, batch=names)
+
+    rule phold_proteins_merge:
+        input:
+            all_batch_markers,
+        output:
+            COMBINED,
+        threads: threads_of("phold_proteins_merge")
+        resources: **res("phold_proteins_merge")
+        log: f"{LOGS}/phold_proteins_merge.log"
+        shell:
+            "$PF_TOOLS python3 $PHAGEFACTOR_HOME/scripts/01p_merge_phold_proteins.py > {log} 2>&1"
+
+
+# =============================================================================
+# STEP 02 — custom FoldSeek: targets -> search -> parse
+# =============================================================================
+rule foldseek_targets:
+    # gene_metadata.csv + targets/hypothetical_genes.csv. Built from the pharokka
+    # annotation in genome mode, from phold in protein mode (02d logic).
+    input:
+        COMBINED,
+        pharokka = expand(rules.pharokka.output.done, prophage=PROPHAGES)
+                   if INPUT_MODE == "genome" else [],
+    output:
+        targets = TARGETS_CSV,
+        meta    = GENE_META,
+    threads: threads_of("foldseek_targets")
+    resources: **res("foldseek_targets")
+    log: f"{LOGS}/foldseek_targets.log"
+    shell:
+        "$PF_TOOLS python3 $PHAGEFACTOR_HOME/scripts/02d_foldseek_3di.py --targets_only > {log} 2>&1"
+
+
+if SEARCH_MODE == "local":
+    rule foldseek_search:
+        input:
+            COMBINED,
+            targets = TARGETS_CSV,
+        output:
+            directory(PER_DB_DIR),
+        params:
+            cfg = PARAMS_SEARCH,
+            dbs = ("--dbs " + " ".join(FOLDSEEK_DBS)) if FOLDSEEK_DBS else "",
+            qdir = P(FS3DI / "query_fastas"),
+            qdb  = P(FS3DI / "query_db"),
+        threads: threads_of("foldseek_search")
+        resources: **res("foldseek_search", qos=QOS_LONG)
+        log: f"{LOGS}/foldseek_search.log"
+        shell:
+            # fresh query FASTAs/DB: their reuse check only compares counts
+            "rm -rf {params.qdir} {params.qdb}; "
+            "export TMPDIR=${{SCRATCH_TMPDIR:-${{TMPDIR:-/tmp}}}}; mkdir -p $TMPDIR; "
+            "$PF_TOOLS python3 $PHAGEFACTOR_HOME/scripts/02d_foldseek_3di.py --search_only "
+            "--threads {threads} {params.dbs} > {log} 2>&1"
+
+    rule foldseek_parse:
+        input:
+            PER_DB_DIR,
+            targets = TARGETS_CSV,
+            meta = GENE_META,
+            code = code("02d_foldseek_3di.py", "lib/foldseek_scoring.py", "lib/rules.py",
+                        "lib/lexicon.py", "lib/utils.py", "lib/taxonomy.py"),
+        output:
+            best = BEST_HIT,
+            top3 = TOP3,
+        params:
+            cfg = PARAMS_PARSE,
+            raw = P(FS3DI / "raw_hits"),
+        threads: threads_of("foldseek_parse")
+        resources: **res("foldseek_parse")
+        log: f"{LOGS}/foldseek_parse.log"
+        shell:
+            # per-gene m8 files are a cache keyed on existence only: rebuild them
+            "rm -rf {params.raw}; "
+            "$PF_TOOLS python3 $PHAGEFACTOR_HOME/scripts/02d_foldseek_3di.py --parse_only > {log} 2>&1"
+
+elif SEARCH_MODE == "webapi":
+    rule foldseek_webapi:
+        # needs internet: runs on the machine where snakemake runs (login node),
+        # never submitted to a compute node
+        localrule: True
+        input:
+            COMBINED,
+            targets = TARGETS_CSV,
+            code = code("02w_foldseek_webapi.py", "lib/foldseek_scoring.py", "lib/rules.py", "lib/lexicon.py",
+                        "lib/esmfold_cache.py", "lib/taxonomy.py"),
+        output:
+            best = BEST_HIT,
+            top3 = TOP3,
+        params:
+            cfg = PARAMS_PARSE,
+            aa  = P(PF.PHOLD_AA_FASTA),
+            m8  = P(FS3DI / "webapi_hits.m8"),
+            all = P(PF.FOLDSEEK_3DI_ALL),
+        log: f"{LOGS}/foldseek_webapi.log"
+        shell:
+            # proteins (<= 400 aa) are folded with ESMFold, searched on the server; scored
+            # exactly as the local search
+            "$PF_TOOLS python3 $PHAGEFACTOR_HOME/scripts/02w_foldseek_webapi.py --fasta {params.aa} "
+            "--targets {input.targets} "
+            "--out {params.m8} --best-hit {output.best} --top3 {output.top3} --all-hits {params.all} "
+            "> {log} 2>&1"
+
+else:  # none: pharokka + phold evidence only
+    rule foldseek_none:
+        input:
+            targets = TARGETS_CSV,
+        output:
+            best = BEST_HIT,
+            top3 = TOP3,
+        log: f"{LOGS}/foldseek_none.log"
+        shell:
+            "$PF_TOOLS python3 $PHAGEFACTOR_HOME/workflow/scripts/empty_foldseek_tables.py "
+            "{output.best} {output.top3} > {log} 2>&1"
+
+
+# =============================================================================
+# STEP 03 — compare / STEP 04 — curate + build output
+# =============================================================================
+rule compare:
+    input:
+        COMBINED,
+        best = BEST_HIT,
+        top3 = TOP3,
+        meta = GENE_META,
+        code = code("03_compare_annotations.py", "lib/lexicon.py", "lib/utils.py",
+                    "lib/rules.py", "lib/taxonomy.py"),
+    output:
+        COMPARISON,
+    params:
+        cfg = PARAMS_COMPARE,
+    threads: threads_of("compare")
+    resources: **res("compare")
+    log: f"{LOGS}/compare.log"
+    shell:
+        "$PF_TOOLS python3 $PHAGEFACTOR_HOME/scripts/03_compare_annotations.py > {log} 2>&1"
+
+
+rule curate:
+    # 04_curate_annotations.py + 05_build_output.py back-to-back
+    input:
+        COMPARISON,
+        meta = GENE_META,
+        overrides = [str(OVERRIDES)] if OVERRIDES.is_file() else [],
+        precomputed = PRECOMPUTED,
+        code = code("04_curate_annotations.py", "05_build_output.py", "lib/rules.py",
+                    "lib/lexicon.py", "lib/utils.py", "lib/foldseek_scoring.py"),
+    output:
+        curated = CURATED,
+        final   = FINAL_TABLE,
+    params:
+        cfg = PARAMS_CURATE,
+        # protein mode: 05_build_output.py builds 01_phold/combined/all_prophages_combined.gbk
+        # itself (precomputed sub-mode) and would reuse a copy left by an earlier
+        # curate run, even after the window/rich-metadata inputs changed
+        stale_gbk = P(PF.RAW_GB) if PROTEIN_LIKE else "",
+    threads: threads_of("curate")
+    resources: **res("curate")
+    log: f"{LOGS}/curate.log"
+    shell:
+        "( if [ -n '{params.stale_gbk}' ]; then rm -f '{params.stale_gbk}'; fi; "
+        "  $PF_TOOLS python3 $PHAGEFACTOR_HOME/scripts/04_curate_annotations.py && "
+        "  $PF_TOOLS python3 $PHAGEFACTOR_HOME/scripts/05_build_output.py ) > {log} 2>&1"
+
+
+# =============================================================================
+# Phynteny + synteny integration (ON by default)
+# =============================================================================
+rule phynteny:
+    input:
+        final = FINAL_TABLE,
+        code = code("06_phynteny.py", "07_integrate.py", "lib/synteny_hint.py",
+                    "lib/rules.py", "lib/lexicon.py", "lib/utils.py"),
+    output:
+        done = PHYNTENY_DONE,
+    params:
+        gbk = UPDATED_GB,
+        out = str(PHYNTENY_DIR),
+        threshold = SCI.get("phynteny", {}).get("threshold", 0.8),
+        cache = PHYNTENY_CACHE,
+    threads: threads_of("phynteny")
+    resources: **res("phynteny")
+    log: f"{LOGS}/phynteny.log"
+    shell:
+        # phynteny_transformer writes ./cache/ (the ~2.5 GB ESM2 model, hard-coded
+        # cache_dir="cache/") and ./skipped_genomes.txt into its working dir: run it
+        # from 05_phynteny/run/ with cache/ linked to ONE shared cache, so the
+        # model is downloaded once, not into every run dir.
+        "( set -e; mkdir -p {params.out}/run '{params.cache}'; "
+        "  if [ ! -f {params.gbk} ]; then "
+        "    echo '[SKIP] no {params.gbk} (no GenBank could be built): phynteny not run'; exit 0; "
+        "  fi; "
+        "  cd {params.out}/run; ln -sfn '{params.cache}' cache; "
+        "  $PF_PHYNTENY python3 $PHAGEFACTOR_HOME/scripts/06_phynteny.py "
+        "    --input {params.gbk} --output {params.out} --threshold {params.threshold}; "
+        "  if [ -f {params.out}/phynteny.tsv ]; then "
+        "    $PF_TOOLS python3 $PHAGEFACTOR_HOME/scripts/07_integrate.py "
+        "      --final {input.final} --gbk {params.gbk} --phynteny {params.out}/phynteny.tsv "
+        "      --out {params.out}/final_annotations_integrated.csv --threshold {params.threshold}; "
+        "  else echo '[SKIP] phynteny produced no table'; fi "
+        ") > {log} 2>&1 && touch {output.done}"
+
+
+# =============================================================================
+# Pangenome: homology-reference set
+# =============================================================================
+if INPUT_MODE == "pangenome":
+    rule pangenome_reference:
+        input:
+            final  = FINAL_TABLE,
+            id_map = PANG_ID_MAP,
+            faa    = PROT_COMBINED_FAA,
+            code   = code("08_pangenome_reference.py"),
+        output:
+            PANG_REF,
+        params:
+            prefix = P(Path(PF.OUTPUT_DIR) / "pangenome_reference"),
+        threads: 1
+        resources: **res("pangenome")
+        log: f"{LOGS}/pangenome_reference.log"
+        shell:
+            "$PF_TOOLS python3 $PHAGEFACTOR_HOME/scripts/08_pangenome_reference.py "
+            "--final {input.final} --id-map {input.id_map} --faa {input.faa} "
+            "--out-prefix {params.prefix} > {log} 2>&1"
+
+
+# =============================================================================
+# Interactive report: one self-contained HTML (genome maps, filterable table,
+# evidence per gene). Seconds of work: runs where snakemake runs, no SLURM job.
+# =============================================================================
+rule report:
+    localrule: True
+    input:
+        final = FINAL_TABLE,
+        # after phynteny when it runs, so its categories/hints are included
+        phynteny = [PHYNTENY_DONE] if RUN_PHYNTENY else [],
+        code = code("09_report.py", "lib/report_template.html"),
+    output:
+        REPORT,
+    params:
+        integrated = P(Path(PF.PHYNTENY_DIR) / "final_annotations_integrated.csv"),
+        gbk = UPDATED_GB,
+        title = f"{RUN_DIR.parent.name}/{RUN_DIR.name}",
+    log: f"{LOGS}/report.log"
+    shell:
+        "$PF_TOOLS python3 $PHAGEFACTOR_HOME/scripts/09_report.py --final {input.final} "
+        "--integrated '{params.integrated}' --gbk '{params.gbk}' --out {output} "
+        "--title '{params.title}' > {log} 2>&1"

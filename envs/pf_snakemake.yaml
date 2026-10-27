@@ -1,0 +1,22 @@
+# Driver environment for the Snakemake workflow (NOT the tool environment).
+# Snakemake >= 8 needs Python >= 3.11, which can clash with the pharokka/phold
+# env, so the driver lives in its own small env. The jobs keep running in your
+# tool env (config/workflow.yaml: tools_env, default "phagefactor") via
+# `micromamba run -n <env>`.
+#
+#   micromamba create -f envs/pf_snakemake.yaml
+#   micromamba activate pf_snakemake
+#   snakemake --profile profiles/slurm -n
+name: pf_snakemake
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python >=3.11
+  - snakemake >=8.20
+  - snakemake-executor-plugin-slurm >=1.2   # 1.2 added the `qos` resource used by the workflow
+  - pyyaml
+  # only for tests/run_workflow_tests.sh (the mock tools run in this env):
+  - pandas
+  - biopython
+  - openpyxl

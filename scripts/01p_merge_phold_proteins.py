@@ -2,9 +2,9 @@
 """
 01p_merge_phold_proteins.py
 ===========================
-Merge per-batch phold proteins-{predict,compare} outputs (written by the
-01p_phold_proteins_array.sh SLURM array — one batch of PROTEIN_BATCH_SIZE
-proteins per task) into the single combined layout that steps 02-06 expect.
+Merge per-batch phold proteins-{predict,compare} outputs (one batch of
+protein_batch_size proteins per job) into the single combined layout that
+steps 02-06 expect.
 
 Mirrors 01c_merge_phold.py (genome mode), but additionally consolidates two
 load-bearing pieces of evidence that later steps depend on:
@@ -36,14 +36,11 @@ Writes:
   01_phold/combined/phold_aa.fasta                (concatenated)
   01_phold/proteins/compare/sub_db_tophits/{source}_cds_predictions.tsv
                                                   (concatenated per source)
-  input/hypothetical_gene_list.txt                (regenerated, all protein IDs)
-  input/split/gene_metadata.csv                   (regenerated; columns match
+  <run>/split/hypothetical_gene_list.txt          (regenerated, all protein IDs)
+  <run>/split/gene_metadata.csv                   (regenerated; columns match
                                                    what 03_compare_annotations.py
                                                    expects)
 
-Usage:
-  cd phagefactor/
-  python scripts/01p_merge_phold_proteins.py
 """
 
 import sys
@@ -59,7 +56,7 @@ _LIB_DIR = Path(__file__).resolve().parent / "lib"
 if _LIB_DIR.is_dir():
     sys.path.insert(0, str(_LIB_DIR))
 
-from config import PHOLD_OUT_DIR, PHOLD_COMB_DIR, INPUT_DIR, GENE_METADATA_CSV
+from config import PHOLD_OUT_DIR, PHOLD_COMB_DIR, SPLIT_DIR, GENE_METADATA_CSV, PROTEIN_BATCH_LIST
 from utils import log, section
 
 try:
@@ -72,19 +69,30 @@ except ImportError:
 BATCHES_DIR = PHOLD_OUT_DIR / "proteins" / "batches"
 MERGED_COMPARE_DIR = PHOLD_OUT_DIR / "proteins" / "compare"
 MERGED_SUBDB_DIR = MERGED_COMPARE_DIR / "sub_db_tophits"
-HYPO_LIST = INPUT_DIR / "hypothetical_gene_list.txt"
+HYPO_LIST = SPLIT_DIR / "hypothetical_gene_list.txt"   # generated: run dir, not input
 GENE_META = GENE_METADATA_CSV   # <run>/split/gene_metadata.csv (config-resolved)
 
 _SUBDB_SOURCES = ("acr", "vfdb", "card", "netflax", "defensefinder")
 
 
 def _find_batches():
-    """Return sorted list of (batch_name, batch_dir) for completed batches."""
+    """Return sorted list of (batch_name, batch_dir) for completed batches.
+
+    Only batches named in the CURRENT protein_batch_list.txt are merged. A
+    batch dir left over from an earlier split with more batches (e.g. after
+    the input shrank) would otherwise be merged too and add stale genes."""
     if not BATCHES_DIR.is_dir():
         return []
+    wanted = None
+    if PROTEIN_BATCH_LIST.is_file():
+        wanted = {l.strip() for l in PROTEIN_BATCH_LIST.read_text().splitlines() if l.strip()}
     out = []
     for d in sorted(BATCHES_DIR.iterdir()):
         if not d.is_dir():
+            continue
+        if wanted is not None and d.name not in wanted:
+            log(f"  NOTE: {d.name} is not in {PROTEIN_BATCH_LIST.name} (left over from "
+                f"an earlier split) — not merged")
             continue
         marker = d / ".batch_done"
         compare_tsv = d / "compare" / "phold_per_cds_predictions.tsv"
@@ -268,7 +276,7 @@ def main():
         log(f"  WARNING: sequence counts (3di={n_3di}, aa={n_aa}) don't match "
             f"merged gene rows ({len(merged)}) — check for missing/failed batches")
 
-    # 3) Merge sub_db_tophits per source (newly load-bearing — see Task #15)
+    # 3) Merge sub_db_tophits per source (read by step 03's sub-DB evidence)
     section("Merging sub_db_tophits (ACR/VFDB/CARD/NetFlaX/DefenseFinder)")
     subdb_counts = _merge_subdb_tophits(batches)
     for source, n in subdb_counts.items():
@@ -276,13 +284,13 @@ def main():
     log("(03_compare_annotations._load_subdb_hits() globs PHOLD_OUT_DIR recursively, "
         "so this consolidated location is found automatically — no config change needed)")
 
-    # 4) Confirm per-residue probability JSONs remain discoverable (newly load-bearing — Task #16)
+    # 4) Confirm per-residue probability JSONs remain discoverable (read by 02d for 3Di masking)
     section("Checking per-residue masking-probability JSONs")
     json_files = _count_probability_jsons()
     log(f"  Found {len(json_files)} *_prostT5_3di_all_probabilities.json file(s) "
         f"under {PHOLD_OUT_DIR} (left in place under proteins/batches/*/predictions/)")
-    log("(02d_foldseek_3di._load_prostt5_probs() now globs '**/...' recursively — "
-        "the Task #16 fix — so these are discovered regardless of batch-array depth)")
+    log("(02d_foldseek_3di._load_prostt5_probs() globs '**/...' recursively, "
+        "so these are discovered regardless of batch-array depth)")
 
     # 5) Regenerate hypothetical_gene_list.txt + gene_metadata.csv
     section("Regenerating hypothetical_gene_list.txt and gene_metadata.csv")
@@ -297,8 +305,6 @@ def main():
     log(f"  Batches merged   : {len(batches)}")
     log(f"  Genes (rows)     : {len(merged)}")
     log(f"  Annotation TSV   : {root_tsv}  (combined copy: {combined_tsv})")
-    log("")
-    log("Next: sbatch steps/02_foldseek_3di.sh")
     log("Done.")
 
 

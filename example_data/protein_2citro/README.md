@@ -24,8 +24,8 @@ protein_2citro/input/
 
 ## Run it
 ```bash
-cp -r example_data/protein_2citro/input/* input/
-bash submit_all.sh                   # auto-detects "protein"
+phagefactor init citro && cp -r example_data/protein_2citro/input/* citro/input/
+cd citro && phagefactor run          # auto-detects "protein"
 ```
 `gene_metadata_rich.csv` is the join-key table: `gene_id_fa` matches each protein FASTA
 header; `start/end/strand/contig` give the host-genome coordinates used to rebuild the

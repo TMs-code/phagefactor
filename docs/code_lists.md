@@ -1,6 +1,6 @@
 # phageFACTor — where the curated word-lists / patterns live in the code
 
-Companion to [`scoring_curation_DAG.svg`](scoring_curation_DAG.svg). Paths are
+Companion to the scoring diagram in [`architecture.md`](architecture.md). Paths are
 relative to the repo root.
 
 Two files:
@@ -23,8 +23,8 @@ Search the symbol name rather than trusting a line number.
 | § | What it controls | Symbols |
 |---|---|---|
 | **A · informativeness** | the gate that drops most hits, plus the three ranking maluses | `UNINFORMATIVE_STRINGS` (exact blocklist) · `UNCHAR_PATTERN` (hypothetical / DUF / bare folds / accession-shaped names) · `GENERIC_DOMAIN` (×0.60, "family protein", "domain-containing", "repeat protein", bare "X-like", "motif") · `GENERIC_NAMES` (×0.60, UPF/Yabc/orf labels, TnpV) · `GENERIC_STRUCTURAL_PRODUCTS` (real but unspecific: `endolysin`, `major capsid protein`) · `GENERIC_WORDS` (tokens dropped before the Jaccard) · `GENERIC_DESCRIPTORS` (exact-membership set for the generic-vs-specific gate) |
-| **B · taxonomy** | kingdom assignment without an NCBI taxonomy dependency | `BACTERIA_KEYWORDS` · `EUKARYOTE_KEYWORDS` · `ARCHAEA_KEYWORDS` · `VIRUS_KEYWORDS` · `EUKARYOTIC_DESC` (description-level euka signal) · `is_eukaryotic_taxname()` (word-boundary matcher shared by 03 and by 02d's parse-time filter) |
-| **C · phage terms** | the boosts and the wrapper malus | `PHAGE_SPECIFIC` (×2.0) · `PHAGE_CONTEXT` (×1.5) · `GP_WRAPPER` (×0.40) · `PHAGE_WRAPPER_ONLY` (anchored: blocks a bare `gpNN` from winning) |
+| **B · taxonomy** | name-keyword fallback for a hit's domain, used only when the hit has no FoldSeek lineage and no taxid in the NCBI taxdump (`lib/taxonomy.py`) | `BACTERIA_KEYWORDS` · `EUKARYOTE_KEYWORDS` · `ARCHAEA_KEYWORDS` · `VIRUS_KEYWORDS` · `EUKARYOTIC_DESC` (description-level euka signal) · `is_eukaryotic_taxname()` (word-boundary matcher, the last fallback of `taxonomy.hit_kingdom`) |
+| **C · phage terms** | the boosts and the wrapper malus | `PHAGE_SPECIFIC` (×2.0; `repressor` only with a phage marker — phage/prophage, CI/C1/C2, Cro, lambda, 434, P22 — plus antirepressors and DicA, so host LexA/MarR/TetR repressors are not boosted; tail sheath/tube/terminator included) · `PHAGE_CONTEXT` (×1.5) · `GP_WRAPPER` (×0.40) · `PHAGE_WRAPPER_ONLY` (anchored: blocks a bare `gpNN` from winning) |
 | **D · defense** | one vocabulary, two term groups | `DEFENSE_SYSTEM_TERMS` (defense in the broad sense: anti-phage / immune systems and counter-defense — restriction alleviation, anti-restriction, anti-CRISPR, immunity → category `defense`) · `DEFENSE_TA_TERMS` (toxin-antitoxin families → category `rules.TA_CATEGORY`) · `DEFENSE_ANY` = both = the FoldSeek defense flag (step 02) and the curation check `_desc_is_defense` (step 04) · `EUKA_RESCUE` (keeps Sir2/TIR/cGAS/Argonaute-type names that look eukaryotic). The defense/TA rows of `rules.CATEGORY_RULES` are built from the same two term groups. |
 | **E · promiscuous folds** | fold ≠ function: flag + cap at BORDERLINE | `PROMISCUOUS_FOLDS` |
 | **F · PDB titles** | "Crystal structure of X" → X; drop ORF/DARPin/SeMet titles | `PDB_CRYSTAL_PREFIX` · `PDB_TRAILING_QUAL` · `PDB_UNINFORMATIVE` · `PDB_TITLE` · `extract_pdb_description()` |
@@ -67,9 +67,7 @@ Mixing the two in one file makes that difference invisible, so they are separate
 - A dropped hit and a demoted hit are not the same thing: C's boosts and A's
   ×0.60 (low-information) / ×0.40 (wrapper) maluses are multiplicative on the ranking score only; E caps confidence;
   B and D set flags or demote one step.
-- Eukaryotic hits are touched at three stages, from one list:
-  `is_eukaryotic_taxname()` removes them *before* scoring (local search only),
-  `EUKARYOTIC_DESC` / the same keyword list flag or demote them *after*, and
-  `EUKA_RESCUE` brings back the ones that are meaningful in phage defence
-  (Sir2, TIR, cGAS, Argonaute). Matching is on word boundaries, not substrings:
-  *Campylobacter conciSUS* is not a pig.
+- Eukaryotic hits: domain from `lib/taxonomy.py`; dropped from afdb50, otherwise
+  unboosted and capped or demoted (`curation_gates.md` §3–4). `EUKARYOTIC_DESC` flags
+  eukaryote-specific descriptions; `EUKA_RESCUE` keeps defence names (Sir2, TIR, cGAS,
+  Argonaute). Keywords match on word boundaries.

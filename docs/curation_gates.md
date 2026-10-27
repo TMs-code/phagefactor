@@ -28,8 +28,10 @@ majority vote (§3).
 
 All thresholds are set in `config.yaml` (`foldseek.confident_*`, `good_*`, `borderline_*`).
 
-Score-only CONFIDENT was deliberately removed: high structural-alignment scores
-are common for promiscuous folds (see §4).
+**Top-3 agreement**: another top-3 hit names the same function as the best hit or
+its upgraded name (`rules.same_function`); two other hits agreeing only with each
+other do not count. A high score alone never gives CONFIDENT (promiscuous folds
+score high, §4).
 
 ## 2. Quality gate (step 02)
 
@@ -50,44 +52,80 @@ Composite ranking score = `foldseek_score × boost`:
 
 Terms are matched as whole words ("holin" does not match "acetylcholine").
 
+**Gates (`gate_phage_boost`).** Each hit is tiered on its own (§1; a function
+repeated by another hit counts as agreement).
+- The boost cannot lift a BORDERLINE/WEAK hit above a GOOD/CONFIDENT one. Gated by
+  tier, not bitscore: holins and tail tubes are small and score low.
+- A eukaryotic hit (domain: `databases.md`) gets no boost and ranks below the
+  gene's best GOOD+ bacterial/archaeal/viral hit. When the best hit is not
+  eukaryotic, eukaryotic hits are left out of the top-3.
+
+`all_hits.csv` shows the `phage_boost` and `composite_score` actually used.
+
 **Description upgrade (`_upgrade_description`).** The best hit's description may be
-replaced by a name that occurs at least twice in the top-3 (majority vote), but only
-when this does not override stronger evidence: a title, a eukaryote-specific name, a
-promiscuous fold, a generic descriptor or a low-information label never replaces a
-named best hit, and otherwise the majority's best raw score must be ≥ that of the
-best hit. A generic, low-information or eukaryote-specific best hit is replaced by a
-majority that names a function.
+replaced by a name that occurs at least twice in the top-3 (majority vote). A title,
+a eukaryote-specific name, a promiscuous fold, a generic descriptor or a
+low-information label never replaces an informative, named best hit; a `(Fragment)`
+variant is never chosen as the name. Then:
+
+- **Same function, different wording** (one name's core words contained in the
+  other's, `rules.same_function`: `Phage portal protein, HK97 family` vs
+  `Phage portal protein` ×2; `Putative transposase/integrase` vs
+  `Site-specific integrase` ×2): a naming choice, not competing evidence. The
+  cleanest, unambiguous, most specific name is kept, whatever the scores.
+- **Different functions**, by the kind of best hit:
+  - a generic gene label (`orf12`, `UPF0123 protein`, y-gene names;
+    `lexicon.GENERIC_NAMES`), a low-information or a eukaryote-specific best hit is
+    replaced by a majority that names a function; without a majority, a gene-label best hit is replaced by the first
+    named phage protein in the top-3, else the strongest named hit (a bare "viral" in a
+    PDB title does not count). `Protein YdaW` counts as a gene label like `YdaW protein`;
+    `Phage pi2 protein 07` counts as a wrapper like `Prophage ps3 protein 01`;
+  - a generic-descriptor best hit (`DNA-binding protein`, `Transcriptional regulator`;
+    `lexicon.GENERIC_DESCRIPTORS`) is replaced by a majority that names a more specific
+    function when the majority's own FoldSeek confidence tier is at least that of the
+    best hit, even with a lower score (`DNA-binding protein` 576 CONFIDENT vs
+    `Phage tail tube protein` 351 ×2 CONFIDENT → tail tube protein);
+  - any other named best hit is replaced only when the majority's best raw score is
+    ≥ that of the best hit. A majority with no phage context must also win on the
+    composite score (score × phage boost) when the best hit names a phage function:
+    `Terminase` 250 ×2 is not outvoted by `DNA primase` 295 ×2; a boost from a bare
+    `gpNN`/`orfNN` label does not count (`IS66 family element, orf1` loses to
+    `Transposase` ×2), nor does the bare word "phage" (`Conserved phage C-terminus`
+    loses to `GntR family transcriptional regulator` ×2).
+  - a domain label that names a phage function (`Integrase catalytic
+    domain-containing protein`) counts as a named best hit, not a low-information one.
+
+A defense domain label that a naming rule turns into a protein name (`SMODS-associating
+2TM ... domain-containing protein` → SLATT effector) gets no low-information malus in
+the ranking.
+
+**Name clean-up (`rules.clean_name`)**, applied to the vote's result and to a kept
+best hit: drops a hedge (`Putative`, `, putative`), `(Fragment)`, an organism prefix
+(`Cyanophage A-1(L) tail fiber` → `Tail fiber`, `Bacteriophage lambda head decoration
+protein D` → `Head decoration protein D`) and a lineage/family suffix on a phage
+STRUCTURAL protein (`Phage portal protein, HK97 family` → `Phage portal protein`). On
+other proteins the family is the information and is kept (`Addiction module toxin,
+HicA family`, `Phage transcriptional regulator, RinA family`). Case is left as is
+(`rRNA`, `dnaB`).
 
 (The name also nods to the factor in phage**FACTor**.)
 
 ## 4. False-positive filters
 
-- **Promiscuous folds** (`_PROMISCUOUS_FOLD_PATTERNS`): MBL/TLD/β-lactamase,
+- **Promiscuous folds** (`lexicon.PROMISCUOUS_FOLDS`): MBL/TLD/β-lactamase,
   glyoxalase II, tRNase Z, CPSF-73/100; eukaryotic motor proteins
-  (kinesin/myosin/dynein); ERAD/ubiquitin ligase; nephrocystin; **Arc/HicB
-  ribbon-helix-helix**. Flagged → routed to `needs_review` (Aravind 1999
-  ; Daiyasu 2001). *Not* auto-rejected — real positives exist.
-  The Arc/HicB ribbon-helix-helix case is demoted **only when BORDERLINE**; a
-  CONFIDENT/GOOD hit is still reviewed.
+  (kinesin/myosin/dynein); ERAD/ubiquitin ligase; nephrocystin; Arc/HicB
+  ribbon-helix-helix (Aravind 1999; Daiyasu 2001). Flagged and capped at
+  BORDERLINE, so never named on their own; kept as evidence (real positives exist).
 - **PDB/structure-title detector** (`_is_pdb_title`): sentence-like pdb100 titles
   (descriptive structure-deposition strings rather than a function) are treated as
   uninformative.
 - **Eukaryotic kingdom filter** (`03`, `_apply_eukaryotic_demote`): if best hit is
-  Eukaryote and no Bacteria/Archaea/Virus appears in top-3, demote one tier
-  (prevents Photosystem-I-style convergent-fold false positives). This same
-  condition is also surfaced as a standalone boolean, `foldseek_euka_kingdom`
-  (not just a tier change), specifically so `04_curate_annotations.py`'s
-  `foldseek_only` case (no phold call at all -- see §6) can still catch a hit
-  that got demoted down to BORDERLINE with a generic-sounding description that the
-  description-keyword filter below would otherwise miss entirely.
-- **Eukaryotic description filter** (`foldseek_euka_desc`): keyword fallback for
-  DBs without embedded taxonomy (afdb-swissprot, pdb100) — matches organism
-  names/eukaryote-specific gene families directly in the description text
-  (`EUKARYOTIC_DESC` in `lexicon.py`). Weaker than the
-  kingdom filter above: it only fires when the description text itself names an
-  organism or a recognisably eukaryotic gene family, so a generic gene-symbol
-  description with correct-but-unmentioned eukaryotic taxonomy needs the
-  kingdom-based flag to be caught.
+  Eukaryote and no Bacteria/Archaea/Virus top-3 hit names the **same function**,
+  demote one tier (convergent-fold false positives); flag `foldseek_euka_kingdom`.
+- **Eukaryotic description filter** (`foldseek_euka_desc`, `lexicon.EUKARYOTIC_DESC`):
+  the description names a eukaryote-specific protein, independent of taxonomy. A
+  GOOD+ FoldSeek-only call flagged this way goes to review.
 
 ## 5. Agreement classification (step 03)
 
@@ -102,7 +140,7 @@ FS keyword via `COMPLEMENTARY_CATEGORY_MAP`, `lib/lexicon.py`) · `phold_only` �
 | strong / partial | auto-merge (prefer Phold unless FS is a strict superset) | no |
 | complementary | auto-merge (FS if it is the direct functional match) | no |
 | phold_only | use Phold | no |
-| foldseek_only | use FoldSeek; **promiscuous/eukaryotic → review** | only if flagged |
+| foldseek_only | use FoldSeek if GOOD/CONFIDENT (BORDERLINE/WEAK → hypothetical, name as suggestion); eukaryotic description/taxonomy → review | only if flagged |
 | different | curation gate tree below, else flag | yes if unresolved |
 | both_uninformative | "hypothetical protein" | no |
 
@@ -132,7 +170,7 @@ disjoint patterns where relative order doesn't matter.
 
 | Situation | Result | `curation_action` |
 |---|---|---|
-| calls conflict (`different`), FoldSeek CONFIDENT + names a function, sub-DB remote | FoldSeek name `[keep-foldseek: subdb-yield]` | `auto_fs_over_weak_phold` |
+| calls conflict (`different`), FoldSeek CONFIDENT + names a function, best hit not eukaryotic, sub-DB remote | FoldSeek name `[keep-foldseek: subdb-yield]` | `auto_fs_over_weak_phold` |
 | NetFlaX, FoldSeek GOOD/CONFIDENT + names a function (otherwise) | `"<FS name> (NetFlaX-predicted toxin\|antitoxin)"` `[merge: ta-functionalize]` | `auto_merge_TA_functionalised` |
 | NetFlaX, FoldSeek generic / weak / absent | `"NetFlaX-predicted toxin\|antitoxin"` `[keep-phold: subdb-priority]` | `auto_phold_over_weak_fs` |
 | VFDB / CARD otherwise | unchanged (Cases 1–5, `subdb-priority`) | unchanged |
@@ -144,6 +182,7 @@ NetFlaX naming: `NetFlaX-predicted toxin` / `NetFlaX-predicted antitoxin` when t
 | Gate | What it does |
 |---|---|
 | title-fallback | the description is a structure title (`… variant Delta+PHS L36R at cryogenic temperature`, `cA4-bound Cami1 in complex with 70S ribosome`) → the protein name inside the title (`Cami1`), else the first top-3 name that names a function, else no final annotation. Length alone (≥ 8 words) never demotes. |
+| weak-evidence | a FoldSeek-only name from a BORDERLINE/WEAK hit is never final: `hypothetical protein`, the name in `curation_suggestion`. |
 | low-information | a FoldSeek-only name that is lexicon tier 1 (domain/family/repeat/motif suffix, gene label, e.g. `SHOCT domain-containing protein`, `XkdX family protein`, `YodL-like`) or a broad wrapper — with no characterised domain (`RELEVANT_DOMAINS`) and no function category inferable from it (`rules.CATEGORY_RULES`, so terminase / nuclease / DNA-binding labels keep their name) — is not used as the final annotation, at any confidence. Result: `hypothetical protein`, `both_uninformative`; the hit stays in `foldseek_description` / `foldseek_confidence` / `foldseek_top3` (and `fs_description` / `fs_top3` in the final table), the name in `curation_suggestion`. Generic-but-real descriptors (`Lipoprotein`, `DNA-binding protein`, `Secreted protein`) are not low-information and stay. |
 
 **`keep-phold`** — phold's call wins outright, no merge, no review (priority order below):
@@ -153,8 +192,10 @@ NetFlaX naming: `NetFlaX-predicted toxin` / `NetFlaX-predicted antitoxin` when t
 | defense-priority | a confident (high/medium) Phold defense-system call is kept over a divergent FoldSeek fold; defense modules routinely reuse mobile-element folds, so disagreement here is expected and not a red flag. |
 | atpase-family | Phold helicase/ABC-transporter/transporter + FoldSeek AAA(+)-ATPase/SMC are the same nucleotide-binding superfamily, not a disagreement. |
 | weak-fs-guard | a BORDERLINE/WEAK or generic FoldSeek hit must not override or flag an informative Phold call; only CONFIDENT/GOOD FS competes. |
+| domain-partner | FoldSeek names a domain of the protein Phold calls (`lexicon.DOMAIN_PARTNERS`: `AP2 domain` on an `HNH endonuclease`, the AP2-HNH homing endonuclease architecture) → keep Phold, no review. |
 | transaldolase-keep | Phold "transaldolase" vs FS panB/hydroxymethyltransferase fold-alike → keep transaldolase. |
 | suppress-fs-wrapper | suppress FS hits that are *only* a bare "(pro)phage protein" wrapper — an informative qualifier in front ("baseplate phage protein") is NOT suppressed. |
+| top3-majority | ≥2 FS top-3 hits name Phold's function, at least as confident as the FS best hit → Phold's call, whatever the best hit says (`Minor capsid protein \| Tail terminator \| Tail terminator` on a Phold `tail terminator` → `tail terminator`). Runs before the merges. |
 | top3-corroboration | scan *all* FS top-3 (hyphen-normalised) for corroboration; gated to `fs_conf == CONFIDENT`. Low-confidence Phold IS included — if Phold's call (even low conf) matches any FS top-3 entry, that cross-method agreement is honoured (e.g. Phold low "kinase" + FS top-3 "histidine kinase" → keep "kinase"). Per-hit FS confidence isn't in the top-3 string, so parity is enforced only at the gene level. |
 
 **`keep-foldseek`** — FoldSeek's call wins outright, no merge, no review:
@@ -167,22 +208,26 @@ NetFlaX naming: `NetFlaX-predicted toxin` / `NetFlaX-predicted antitoxin` when t
 
 | Gate | What it does |
 |---|---|
-| ta-functionalize | Phold names a toxin-antitoxin role (NetFlaX/antitoxin/toxin/AbrB) and FoldSeek names the actual protein → merge as `"<FS name> (<role> protein)"`. |
+| ta-functionalize | Phold names a toxin-antitoxin role (NetFlaX/antitoxin/toxin/AbrB) and FoldSeek names the actual protein → merge as `"<FS name> (<role> protein)"`. A top-3 hit naming a TA family (`lexicon.TA_FAMILY`: YgiT, HicB, RelE, …) is used over a best hit that names none (`YgiT family` antitoxin, not `Phage Cro/CI transcriptional regulator`). |
 | transposition-motor | Phold "DNA transposition"/transposase + FoldSeek AAA-ATPase/NTPase-KAP/P-loop → the FS hit is the transposition motor; merge `"DNA transposition (<motor>)"`. |
+| euka-substitute | the FS best hit is eukaryotic and GOOD+ → `"<Phold> / <first prokaryotic top-3 hit>"`; a confident Phold tail/head/connector call is kept alone when that hit has another category. A demoted (BORDERLINE) eukaryotic best hit goes to weak-fs-guard instead. |
 | morphogenesis | two structural/assembly terms (tail, head, portal, capsid, baseplate, …) on both sides → parts of the same morphogenesis module; merge `"<Phold> (<FoldSeek>)"`. |
+| head-tail-conflict (review) | after any rule: Phold and the final call put the protein on opposite virion parts (head: capsid, head, scaffold, decoration, portal; tail: tail, fiber, baseplate, tape measure, sheath, tube, spike, hub, wedge) → Phold's name + review. Neck proteins (connector, adaptor, head closure, tail terminator/completion) never conflict. |
 | subdb-over-generic-fs | a specialised sub-DB hit (adopted by the sub-DB substitution step) beats a *generic* FoldSeek call even at low Phold confidence. |
-| fs-specificity-upgrade | Phold gives a generic structural term and ≥2 FS top-3 hits converge on a specific named product → merge `"<generic> (<specific>)"`. |
+| fs-specificity-upgrade | Phold gives a generic structural term and ≥2 FS top-3 hits converge on a specific named product → merge `"<generic> (<specific>)"`. When that product belongs to another function category (a regulator on a `tail protein`), Phold's structural call is kept instead (`[keep-phold: structural-call]`). |
 
 **`specificity`** — prefer whichever side is genuinely specific (symmetric):
 
 | Gate | What it does |
 |---|---|
-| generic-vs-specific | one side a pure generic descriptor, other names a specific protein/family → prefer the specific one (exact-membership check, never collides with `rules.UPGRADE_RULES`). |
+| generic-vs-specific | one side a pure generic descriptor, other names a specific protein/family → prefer the specific one (exact-membership check, never collides with `rules.UPGRADE_RULES`). A BORDERLINE FoldSeek name never replaces a generic Phold call (`transcriptional regulator` is kept over `viral Zalpha domain`). |
+| module-majority | when Phold is a generic structural term and the FoldSeek best hit names one virion module (head) while ≥ 2 top-3 hits name the other (tail), the first top-3 hit of the majority module is used (`Head decoration protein` \| `Phage tail protein` \| `Tail fiber protein` → `Phage tail protein`). |
 
 **`fallback`** — nothing above matched:
 
 | Gate | What it does |
 |---|---|
+| high-phold-guard | an unrelated disagreement between a high-confidence Phold call and a FoldSeek hit that is only GOOD (not CONFIDENT), with Phold's e-value ≥ 5 orders of magnitude lower (Phold `high` can rest on identity or ProstT5 alone), keeps Phold's name without review (`Arc-like repressor` e 2e-16 vs `Phage portal protein` e 0.005 on 108 aa). Runs last, so the merges and specificity gates above still apply. |
 | relatedness-fallback | nothing above resolved it. If Phold and FS (top-1 or any top-3) share a specific functional token, or Phold's category is complementary to FS, they aren't really divergent → `auto_merge_related`, no flag. Only genuinely unrelated disagreements reach `needs_review_divergent`. |
 
 Each gate's return explanation is tagged `[group: slug]` (e.g. `[keep-phold:
@@ -195,7 +240,7 @@ Runs *after* the full decision tree above, on every gene's final call
 (`04_curate_annotations.py::_apply_relevant_domain`) — not gated to any
 particular agreement branch or rule. It re-checks the resulting description
 against a short list of structurally-recognisable, well-corroborated domains
-(SPOR, PIN, LysM, HNH, GIY-YIG) via a domain-anchored regex ("`<token> domain
+(SPOR, PIN, LysM, HNH, GIY-YIG, HEPN, CBS) via a domain-anchored regex ("`<token> domain
 [-containing] protein`", not a specific protein name that merely contains the
 token). A domain-level hit can never be more specific than a real functional
 call, so: if Phold is informative, its product is kept with the domain
@@ -211,19 +256,18 @@ Both come from the Phold+FoldSeek path, but are distinguished for diagnostics:
   suppress-fs-wrapper / fs-specificity-upgrade / generic-vs-specific /
   different-resolved): the two sources were *combined*, not identical.
 
-Plus `phold`, `foldseek`, `no_hit`. Surfaced in the final table as the evidence category
-(`structural-only` = FoldSeek-only).
+Plus `phold` (Phold-only), `foldseek` (FoldSeek-only), `no_informative_hit` and
+`no_hit`, surfaced in the final table as `annotation_source`.
 
 ### Relatedness check (`_shares_function`)
 Decides whether the Phold and FoldSeek calls describe the *same* function. Beyond the
-Jaccard/keyword tests, it now also treats two names as related via:
+Jaccard/keyword tests, it treats two names as related via:
 - **(a) split-token substring + shared prefix ≥ 6.** Catches compound or typo'd enzyme
   names (e.g. `metallo-protease` ~ `metallopeptidase`; a misspelled
   `deoxyribosyltransferase`) that token-set overlap alone would miss.
 - **(b) synonym groups** sourced from the **`COMPLEMENTARY_CATEGORY_MAP` value-lists**
   (the same curated map, reused symmetrically — *no new constant*; defined in
-  `scripts/lib/lexicon.py` section I). New synonym
-  members in that map: lysis `+ glycosidase / glucosaminidase / phosphodiester`;
+  `scripts/lib/lexicon.py` section I), e.g.: lysis `+ glycosidase / glucosaminidase / phosphodiester`;
   head & packaging `+ protease / peptidase / metallopeptidase / metalloprotease`;
   transcription `+ fur / ferric / regulation`; DNA-metabolism `+ soj`; moron
   `+ oxidoreductase / redox / fe-s / fes / ferredoxin`.
@@ -270,15 +314,15 @@ Deterministic post-pass (does not change which annotation was chosen):
 short_name, annotation_source, note`) is the **escape hatch** for irreducibly
 per-gene decisions that should not become regex rules: forcing the FoldSeek call
 (`choose-FS`), specific merges, gene-symbol `short_name`s, etc. It applies in
-`05_build_output.py` (run as part of `steps/04_curate.sh`) rather than only in
+`05_build_output.py` (run as part of the curate step) rather than only in
 `07_integrate.py` — so a hand-curated call lands in the deliverable table **and
 clears the review flag** for that gene. The `annotation_source` column lets an
 override declare the evidence category it should carry in the final table.
 
 ## 10. Phynteny + synteny integration (`07_integrate.py`)
 
-Runs after `06_phynteny.py` (Phynteny Transformer) — both scripts are invoked by the
-single optional `steps/05_phynteny.sh` SLURM step. Merges two synteny-based signals
+Runs after `06_phynteny.py` (Phynteny Transformer) — both scripts are run by the
+phynteny step of the workflow (on by default). Merges two synteny-based signals
 into the final table. Phynteny IDs are **positional** (e.g. `<record>_0` = the first
 CDS in that GBK record), so they are mapped to `locus_tag` by CDS order within each
 record (exact; works in genome and protein mode).

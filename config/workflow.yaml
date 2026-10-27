@@ -1,0 +1,76 @@
+# =============================================================================
+# workflow.yaml — run settings for the Snakemake workflow (workflow/Snakefile)
+# =============================================================================
+# The SCIENCE settings (thresholds, databases, curation) stay in config.yaml.
+# This file only says WHAT to run and WHERE. Every key may be left `null`:
+#
+#   value used = --config key=value  >  this file  >  ~/.config/phagefactor/settings.yaml
+#                >  environment variable  >  default
+#
+# `phagefactor init <dir>` copies this file to <dir>/config/workflow.yaml (with
+# `resources:` commented out: the defaults below apply unless you uncomment a line).
+# Machine settings (env names, SLURM account, node features) go in
+# ~/.config/phagefactor/settings.yaml: see docs/configure.md.
+# Override a key for one launch without editing the file:
+#   phagefactor run --slurm --config run_dir=runs/test search_mode=webapi
+# =============================================================================
+
+# --- Data in / results out ---------------------------------------------------
+input_dir:   null   # env PHAGEFACTOR_INPUT       default paths.input_dir of config.yaml (input)
+run_dir:     null   # env PHAGEFACTOR_RUN_DIR     default paths.run_dir of config.yaml (runs/run)
+                    # ONE run dir per analysis: re-launching on the same dir only redoes what changed.
+                    # (No automatic run_002 numbering: a new analysis = a new run_dir.)
+
+# --- What to run ---------------------------------------------------------------
+input_mode:  null   # env INPUT_MODE   auto | genome | protein | pangenome      default auto
+search_mode: null   # env SEARCH_MODE  local | webapi | none                    default local
+                    #   webapi runs on the machine that launched snakemake (login node: needs internet)
+foldseek_dbs: null  # env FOLDSEEK_DBS e.g. "afdb-swissprot pdb100"             default all in config.yaml
+phynteny:    null   # env RUN_PHYNTENY  phynteny + synteny integration   default TRUE (flagged at start/end of the run)
+
+# --- Software environments (<micromamba|conda> run -n <env> <command>) ---------
+# auto (default): the active environment when it has the tools (conda install of
+# phageFACTor), else the env named phagefactor / phynteny. "" = always the active env.
+micromamba:  null   # micromamba binary   default: $MAMBA_EXE, then PATH, then $MAMBA_ROOT_PREFIX/bin/micromamba, else conda
+tools_env:   null   # env MAMBA_ENV  env with pharokka + phold + foldseek + pandas/biopython   default auto
+phynteny_env: null  # env PHYNTENY_ENV  env holding phynteny_transformer (python < 3.11)    default auto
+phynteny_cache: null # env PHYNTENY_CACHE  shared cache for phynteny's ESM2 model (~2.5 GB, downloaded once)
+                    #   default ~/.cache/phagefactor/phynteny
+
+# --- Step options --------------------------------------------------------------
+protein_batch_size:   null  # env PROTEIN_BATCH_SIZE        default 50
+phold_gpu:            null  # env PHOLD_USE_GPU (0/1)       default false (genome mode)
+phold_proteins_gpu:   null  # env PHOLD_PROTEINS_USE_GPU    default false (protein mode)
+phold_mode:           null  # env PHOLD_MODE  "" | remote   default ""  (remote = ProstT5 on the Foldseek server)
+pangenome_nt_fasta:   null  # env PANGENOME_NT_FASTA        default first FASTA in <input>/pangenome_nt/, else <input>/fasta/
+pangenome_table:      null  # env PANGENOME_TABLE           default 11
+pangenome_prefix:     null  # env PANGENOME_PREFIX          default pang_
+scratch_tmpdir:       null  # env SCRATCH_TMPDIR            default $TMPDIR or /tmp
+
+# --- SLURM (ignored when running locally) -------------------------------------
+slurm_partition:      null  # env SLURM_PARTITION      default common
+slurm_qos:            null  # env SLURM_QOS            default fast
+slurm_qos_long:       null  # QOS for the FoldSeek search (8 h)   default normal
+slurm_account:        null  # env SLURM_ACCOUNT        default (none)
+slurm_gpu_partition:  null  # env SLURM_GPU_PARTITION  default gpu
+slurm_gpu_qos:        null  # env SLURM_GPU_QOS        default gpu
+slurm_gpu_gres:       null  #                          default gpu:1
+slurm_email:          null  # env SLURM_EMAIL          default (no mail)
+slurm_mail_type:      null  # env SLURM_MAIL_TYPE      default FAIL (per job; none for the pharokka/phold arrays)
+
+# Per-step CPUs / memory (MB) / time (minutes) [/ constraint: node features].
+# Override one entry, e.g.  --config 'resources={"foldseek_search":{"mem_mb":128000}}'
+resources:
+  pharokka:          {cpus: 8,  mem_mb: 16000,  runtime: 30}
+  phold:             {cpus: 8,  mem_mb: 32000,  runtime: 120}
+  phold_merge:       {cpus: 2,  mem_mb: 8000,   runtime: 20}
+  split_proteins:    {cpus: 1,  mem_mb: 4000,   runtime: 20}
+  phold_proteins:    {cpus: 8,  mem_mb: 32000,  runtime: 120}
+  phold_proteins_merge: {cpus: 4, mem_mb: 16000, runtime: 30}
+  foldseek_targets:  {cpus: 2,  mem_mb: 8000,   runtime: 30}
+  foldseek_search:   {cpus: 16, mem_mb: 262144, runtime: 480}   # 256 GB: the afdb50 index is loaded in RAM
+  foldseek_parse:    {cpus: 4,  mem_mb: 16000,  runtime: 60}
+  compare:           {cpus: 4,  mem_mb: 16000,  runtime: 60}
+  curate:            {cpus: 4,  mem_mb: 16000,  runtime: 60}
+  phynteny:          {cpus: 8,  mem_mb: 32000,  runtime: 120}
+  pangenome:         {cpus: 2,  mem_mb: 8000,   runtime: 30}

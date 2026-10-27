@@ -75,7 +75,7 @@ def run_phynteny(input_gb: Path, output_dir: Path, threshold: float):
     # classic LSTM version. Console script `phynteny_transformer`. CLI:
     #   phynteny_transformer <input.gbk> -o <outdir> [-m <models_dir>]
     # Needs PHROG-annotated GenBank (our step-05 GBK qualifies post-phold) and
-    # pre-downloaded models (`install_models`, see 00_install_env.sh Step 5).
+    # pre-downloaded models (`install_models`, done by `phagefactor install-envs`).
     # No 120-gene cap (unlike classic LSTM phynteny). No --min_confidence flag —
     # it emits a phynteny score + confidence per CDS, filtered in
     # parse_phynteny_output(threshold). Outputs:
@@ -153,8 +153,8 @@ def parse_phynteny_output(output_dir: Path, threshold: float) -> pd.DataFrame:
     # NOTE: `ID` is POSITIONAL (e.g. "<record>_0" = the first CDS in that GBK
     # record), NOT the GBK locus_tag — so downstream joins to the final table
     # must use (phage,start) coordinates, not locus_tag.
-    # Map by EXACT known names (the old substring heuristic collided: "ID"/"phrog_id"
-    # both matched "id", "phrog_category"/"phynteny_category" both matched "category").
+    # Map by EXACT names: substrings collide ("id" is in "phrog_id", "category"
+    # in both "phrog_category" and "phynteny_category").
     def pick(*names):
         for n in names:
             if n in df.columns:

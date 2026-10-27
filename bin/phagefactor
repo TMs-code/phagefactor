@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# =============================================================================
+# phagefactor — command-line entry point
+# =============================================================================
+#   phagefactor init <dir>                 new project: <dir>/config/, <dir>/input/
+#   phagefactor run [--slurm] [args]       run the workflow for the project in the
+#                                          current dir (args go to snakemake, e.g. -n)
+#   phagefactor databases [<dir>] <flags>  download databases (--all, --pharokka, ...)
+#   phagefactor install-envs [--tools] [--phynteny]
+#   phagefactor check                      which databases are found
+#   phagefactor where                      resolved project, input, run and database paths
+#   phagefactor --version
+# The code (this folder) is never written to: settings, inputs and runs live in
+# the project dir. Guide: docs/snakemake.md
+# =============================================================================
+set -euo pipefail
+CODE="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+VERSION="$(cat "${CODE}/VERSION" 2>/dev/null || echo unknown)"
+PY="${PHAGEFACTOR_PYTHON:-python3}"
+
+die() { echo "phagefactor: $*" >&2; exit 1; }
+
+usage() { sed -n '4,14p' "$(readlink -f "${BASH_SOURCE[0]}")" | sed 's/^# \{0,1\}//'; }
+
+# resolved locations (scripts/lib/config.py) of the project in the current dir
+locations() { PHAGEFACTOR_PROJECT="${PWD}" "${PY}" "${CODE}/scripts/lib/config.py"; }
+loc() { locations | sed -n "s/^$1=//p"; }
+
+cmd_init() {
+    [[ $# -eq 1 ]] || die "usage: phagefactor init <dir>"
+    local d="$1"
+    mkdir -p "$d/config" "$d/input/fasta"
+    for f in config.yaml workflow.yaml; do
+        if [[ -e "$d/config/$f" ]]; then echo "  kept     $d/config/$f"
+        else
+            cp "${CODE}/config/$f" "$d/config/$f"; chmod u+w "$d/config/$f"
+            # per-step resources stay in the code defaults; uncomment a line to override it
+            [[ $f == workflow.yaml ]] && sed -i '/^resources:/,$ s/^/# /' "$d/config/$f"
+            echo "  created  $d/config/$f"
+        fi
+    done
+    [[ -e "$d/input/overrides.tsv" ]] || { cp "${CODE}/input/overrides.tsv" "$d/input/overrides.tsv"; chmod u+w "$d/input/overrides.tsv"; }
+    cat <<EOF
+
+Project ready: $(cd "$d" && pwd)
+  1. put your FASTA files in input/fasta/ (genome mode: one per prophage, plus
+     input/prophage_list.txt with one name per line; see docs/modes.md)
+  2. check config/config.yaml (host_genus, databases) and config/workflow.yaml
+  3. cd $d && phagefactor run -n      (dry run), then phagefactor run [--slurm]
+EOF
+}
+
+cmd_run() {
+    [[ -f config/config.yaml || -f config/workflow.yaml ]] \
+        || die "no config/ in $(pwd): run this from a project dir (phagefactor init <dir>)"
+    command -v snakemake &>/dev/null || die "snakemake not found (activate the env that has it)"
+    local profile="${CODE}/profiles/local" args=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --slurm) profile="${CODE}/profiles/slurm" ;;
+            --profile) profile="$2"; shift ;;
+            --profile=*) profile="${1#--profile=}" ;;
+            *) args+=("$1") ;;
+        esac
+        shift
+    done
+    exec snakemake --snakefile "${CODE}/workflow/Snakefile" --profile "${profile}" "${args[@]}"
+}
+
+cmd_databases() {
+    local dir="" flags=()
+    for a in "$@"; do
+        case "$a" in
+            --*) flags+=("$a") ;;
+            *) [[ -z "$dir" ]] || die "one directory only"; dir="$a" ;;
+        esac
+    done
+    [[ ${#flags[@]} -gt 0 ]] || die "usage: phagefactor databases [<dir>] --all | --pharokka --phold --pdb100 --swissprot --afdb50 --taxdump --index"
+    if [[ -n "$dir" ]]; then
+        mkdir -p "$dir"; dir="$(cd "$dir" && pwd)"
+        local cfg="${XDG_CONFIG_HOME:-${HOME}/.config}/phagefactor/settings.yaml"
+        mkdir -p "$(dirname "$cfg")"
+        # set db_root, keep the user's other settings
+        "${PY}" - "$cfg" "$dir" <<'PYEOF'
+import sys, yaml
+from pathlib import Path
+f, d = Path(sys.argv[1]), sys.argv[2]
+s = (yaml.safe_load(f.read_text()) or {}) if f.is_file() else {}
+s["db_root"] = d
+f.write_text(yaml.safe_dump(s, sort_keys=False))
+PYEOF
+        echo "database location recorded in $cfg: $dir"
+        export PHAGEFACTOR_DB_ROOT="$dir"
+    fi
+    export PHAROKKA_DB="$(loc PHAROKKA_DB)" PHOLD_DB="$(loc PHOLD_DB)" FOLDSEEK_DB_ROOT="$(loc FOLDSEEK_DB_ROOT)" \
+           TAXDUMP_DIR="$(loc TAXDUMP_DIR)"
+    [[ -n "${PF_TOOLS:-}" ]] || { command -v foldseek &>/dev/null || export PF_TOOLS="$(_runner) ${MAMBA_ENV:-phagefactor}"; }
+    exec bash "${CODE}/scripts/setup/databases.sh" "${flags[@]}"
+}
+
+_runner() {
+    if [[ -n "${MAMBA_EXE:-}" && -x "${MAMBA_EXE}" ]]; then echo "${MAMBA_EXE} run -n"
+    elif command -v micromamba &>/dev/null; then echo "$(command -v micromamba) run -n"
+    elif command -v conda &>/dev/null; then echo "$(command -v conda) run --no-capture-output -n"
+    else die "foldseek is not on PATH and no micromamba/conda to reach the tool env"; fi
+}
+
+case "${1:-}" in
+    init)          shift; cmd_init "$@" ;;
+    run)           shift; cmd_run "$@" ;;
+    databases)     shift; cmd_databases "$@" ;;
+    install-envs)  shift; exec bash "${CODE}/scripts/setup/install_envs.sh" "$@" ;;
+    check)         shift; PHAGEFACTOR_PROJECT="${PWD}" exec "${PY}" "${CODE}/scripts/tools/check_databases.py" "$@" ;;
+    where)         locations ;;
+    -V|--version|version) echo "phageFACTor ${VERSION}" ;;
+    ""|-h|--help|help) usage ;;
+    *) die "unknown command '$1' (phagefactor --help)" ;;
+esac

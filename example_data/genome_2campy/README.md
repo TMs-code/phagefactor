@@ -16,11 +16,11 @@ Two representative *Campylobacter jejuni* prophages, CJIE1 (39.3 kb) and CJIE2 (
 
 ## Run it
 ```bash
-# from the repo root, point input/ at this example
-cp -r example_data/genome_2campy/input/* input/
-bash submit_all.sh                 # auto-detects "genome" from input/fasta/
-#   ...or the no-database path:
-SEARCH_MODE=webapi bash submit_all.sh
+phagefactor init campy && cp -r example_data/genome_2campy/input/* campy/input/
+cd campy
+phagefactor run                    # auto-detects "genome" from input/fasta/
+#   ...or without FoldSeek databases (Pharokka + Phold DBs still needed):
+phagefactor run --config search_mode=webapi
 ```
 
 Expected: `04_output/final_annotations_table.csv` with one row per CDS, the

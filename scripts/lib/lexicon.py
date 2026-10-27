@@ -132,7 +132,7 @@ _WRAP_PREFIX   = r"(?:putative\s+|conserved\s+)?"
 _PHAGE_PROTEIN = r"(?:bacterio)?(?:pro)?phage[\s\-]*(?:associated|related|derived)?\s*protein\b"
 _GP_NAME       = r"gp\d+\w*"
 _GP_HOMOLOG    = r"homolog\s+to\s+.*\bgp\d+.*"
-_Y_GENE        = r"^Y[a-z]{2}[A-Z]\s+protein\s*$"
+_Y_GENE        = r"^Y[a-z]{2}[A-Z]\s+protein\s*$|^protein\s+Y[a-z]{2}[A-Z]\s*$"   # YdaW protein / Protein YdaW
 
 # A3 domain/family SUFFIX -> low-information malus (config foldseek.low_info_malus, 0.60).
 GENERIC_DOMAIN = re.compile(
@@ -280,6 +280,13 @@ BACTERIA_KEYWORDS = frozenset({
 # canis / felis / ovis / sus / mus / bos / pan / pongo / equus are all valid
 # bacterial species epithets (Helicobacter canis, Moraxella ovis, Brucella ovis).
 EUKARYOTE_KEYWORDS = frozenset({
+    # plants, fungi, protists, animals seen among FoldSeek hits
+    "gossypium", "medicago", "salix", "crocus", "camptotheca", "micractinium",
+    "symbiodinium", "effrenium", "kipferlia", "neospora", "aphanomyces",
+    "parastagonospora", "trichophyton", "monilinia", "mycosarcoma", "ogataea",
+    "lachancea", "hanseniaspora", "mytilus", "strongylocentrotus", "ornithodoros",
+    "nothobranchius", "branchiostoma", "brugia", "cylicostephanus", "stylophora",
+    "hydra", "bos",
     # Mammals and other animals. Genus alone where unambiguous; binomial where
     # the genus name is also a bacterial species epithet.
     "homo", "homo sapiens", "mus musculus", "rattus", "bos taurus",
@@ -338,9 +345,24 @@ def is_eukaryotic_taxname(taxname):
 # =============================================================================
 # C. PHAGE TERMS
 # =============================================================================
-# C x2.00 boost: a NAMED phage protein.
+# C x2.00 boost: a NAMED phage protein. gpNN is phage gene nomenclature; orfNN is
+# not (any genome numbers its ORFs: 'IS66 family element, orf1') and is handled as a
+# gene label (ORF_STYLE / GENERIC_NAMES), never boosted.
+# Toxin-antitoxin families: a top-3 hit naming one is preferred when phold gives
+# only the TA role ([merge: ta-functionalize]; 'YgiT family' over 'Cro/CI').
+TA_FAMILY = re.compile(
+    r'''\b(?:anti)?toxin\b|\b(?:ygiT|mqsA|mqsR|hicA|hicB|relB|relE|parD|parE|higA|higB|mazE|mazF|vapB|vapC|yefM|yoeB|ccdA|ccdB|hipA|hipB)\b|death.on.curing|addiction.module''',
+    re.I)
+
+# Domains that are part of the protein phold names, not another function:
+# (phold regex, FoldSeek regex, why). Keep phold, no review ([keep-phold: domain-partner]).
+DOMAIN_PARTNERS = [
+    (re.compile(r'\bHNH\b|homing.endonuclease', re.I), re.compile(r'\bAP2\b', re.I),
+     "AP2 is the DNA-binding domain of AP2-HNH homing endonucleases"),
+]
+
 PHAGE_SPECIFIC = re.compile(
-    r'''\bgp\d+\b|\borf\d+\b|terminase|capsid|portal|baseplate|tail.fiber|\b(?:anti)?holin|endolysin|spanin|excisionase|integrase|recombinase|resolvase|invertase|\bbet\b|\bexo\b|anti.repressor|repressor|\bcro\b|n-protein|o-protein|head.*protein|structural.*protein.*phage|major capsid|minor capsid|tape.measure|anti.crispr|abortive''',
+    r'''\bgp\d+\b|terminase|capsid|portal|baseplate|tail.fiber|\b(?:anti)?holin|endolysin|spanin|excisionase|integrase|recombinase|resolvase|invertase|\bbet\b|\bexo\b|anti.?repressor|(?:\bphage|\bprophage|\blambda|\b434|\bp22|\bc[i12]\b|\bcro\b)[^/,;]{0,40}?\brepressor|\bcro\b|\bdica\b|n-protein|o-protein|head.*protein|structural.*protein.*phage|major capsid|minor capsid|tape.measure|tail.(?:sheath|tube|terminator)|late.control|anti.crispr|abortive''',
     re.IGNORECASE,
 )
 
@@ -462,7 +484,7 @@ FS_GENERIC = re.compile(
 # Deliberately WIDER than FS_GENERIC: see the module docstring on widths.
 FS_GENERIC_BROAD = re.compile(
     r"^" + _WRAP_PREFIX + r"(?:" + _PHAGE_PROTEIN + r".*|" + _GP_NAME + r"|" + _GP_HOMOLOG
-    + r'''|\S*\s*gp\d+\b.*|mu-?like\s+prophage.*|.*\bhk97\b.*|phage\s+(nucleotide-?binding|minor\s+structural|structural|virion\s+morphogenesis|derived|associated)\s+protein.*|atp-?binding protein|atpase|dna-?damage-?inducible protein.*|prophage\s+\w+\s+protein\s+\d+|.*\b(ig-?like|asch|atp-grasp|duf\d+|zinc[\s\-]?(ribbon|finger))\s+domain.?containing\s+protein.*|pentapeptide\s+repeat.*|tigr\d+\s+family\s+protein.*|chp\d+.*|.*\b[nc]-?terminal\s+domain.?containing\s+protein|.*\b(macro|jmjc|toprim)\s+domain.?containing\s+protein|(uncharacteri[sz]ed|hypothetical)\s+protein.*)$''',
+    + r'''|\S*\s*gp\d+\b.*|mu-?like\s+prophage.*|.*\bhk97\b.*|phage\s+(nucleotide-?binding|minor\s+structural|structural|virion\s+morphogenesis|derived|associated)\s+protein.*|atp-?binding protein|atpase|dna-?damage-?inducible protein.*|(?:pro)?phage\s+\w+\s+protein\s+\d+|.*\b(ig-?like|asch|atp-grasp|duf\d+|zinc[\s\-]?(ribbon|finger))\s+domain.?containing\s+protein.*|pentapeptide\s+repeat.*|tigr\d+\s+family\s+protein.*|chp\d+.*|.*\b[nc]-?terminal\s+domain.?containing\s+protein|.*\b(macro|jmjc|toprim)\s+domain.?containing\s+protein|(uncharacteri[sz]ed|hypothetical)\s+protein.*)$''',
     re.IGNORECASE,
 )
 
@@ -524,7 +546,7 @@ COMPLEMENTARY_CATEGORY_MAP = {
                                 "reca", "rect", "sbc", "methyltransferase",
                                 "deoxyribosyltransferase", "partition", "chromosome partitioning",
                                 "parb", "para", "soj", "korb", "atpase", "aaa", "atp-binding",
-                                "primosome", "terminase"],
+                                "primosome", "terminase", "hth", "dna-binding"],
     # Fe-S redox enzymes carried as morons: Fe-S-cluster redox ~ Fe-S-oxidoreductase.
     "moron, auxiliary metabolic gene and host takeover": ["toxin", "antitoxin", "amg",
                                 "secreted", "effector", "oxidoreductase", "redox",

@@ -2,9 +2,9 @@
 """
 02w_foldseek_webapi.py — FoldSeek search via the public web server (no local DB)
 
-STATUS: on hold. search.foldseek.com accepts a STRUCTURE, so queries must be
-folded first, and the ESMFold API (api.esmatlas.com) is currently unavailable.
-Use SEARCH_MODE=local instead.
+Experimental: search.foldseek.com accepts a STRUCTURE, so queries are folded
+first with the ESMFold API (api.esmatlas.com), which is often unavailable.
+search_mode=local is the supported route.
 
 Folds with scripts/lib/esmfold_cache.py (sequence-keyed cache), searches each
 structure, and writes one concatenated m8 that feeds the same scoring path as
@@ -23,6 +23,11 @@ import time
 import tarfile
 import argparse
 from pathlib import Path
+
+# scripts/lib/ holds the shared modules (config, foldseek_scoring, esmfold_cache, ...)
+_LIB_DIR = Path(__file__).resolve().parent / "lib"
+if _LIB_DIR.is_dir():
+    sys.path.insert(0, str(_LIB_DIR))
 
 try:
     import requests
@@ -217,21 +222,23 @@ def webm8_to_best_hit(m8_path, best_csv, top3_csv, all_csv=None):
     import pandas as pd
     from foldseek_scoring import (
         _is_informative_fs, _phage_boost_factor, _is_same_host_hit, _host_boost_factor,
-        _is_promiscuous_fold_hit, _has_eukaryotic_description, build_best_and_top3,
+        _is_promiscuous_fold_hit, _has_eukaryotic_description, build_best_and_top3, gate_phage_boost,
+        _DEFENSE_ANY,
     )
     try:
         from config import FOLDSEEK_EVALUE_MAX, FOLDSEEK_SCORE_OVERRIDE
     except Exception:
         FOLDSEEK_EVALUE_MAX, FOLDSEEK_SCORE_OVERRIDE = 0.1, 200
 
-    rows = [l.split("\t") for l in _P(m8_path).read_text().splitlines()
-            if l and not l.startswith("#")]
+    # hit rows only (the server's tarball also holds taxonomy report rows)
+    rows = [r for r in (l.split("\t") for l in _P(m8_path).read_text().splitlines()
+                        if l and not l.startswith("#")) if len(r) >= 13]
     if not rows:
         log("No rows in m8 — nothing to bridge."); return
     df = pd.DataFrame([r[:len(_WEB_M8_COLS)] + [""] * (len(_WEB_M8_COLS) - len(r))
                        for r in rows], columns=_WEB_M8_COLS)
     # map to the schema build_best_and_top3 expects
-    df["gene"]        = df["query"]
+    df["gene"]        = df["query"].str.split(":", n=1).str[-1]   # "PROPHAGE:locus_tag" -> locus_tag
     df["accession"]   = df["target_raw"].str.split(" ", n=1).str[0]
     df["description"] = df["target_raw"].str.split(" ", n=1).str[1].fillna("").str.strip()
     for c in ("pident", "evalue_raw", "score_raw", "qcov_aa"):
@@ -247,10 +254,14 @@ def webm8_to_best_hit(m8_path, best_csv, top3_csv, all_csv=None):
         lambda r: _host_boost_factor(r["description"], r["same_host"]), axis=1)
     df["composite_score"]       = (df["score"].fillna(0)
                                    * df["phage_boost"] * df["host_boost"])
-    df["defense_flag"]          = False
+    df["defense_flag"]          = df["description"].apply(lambda d: bool(_DEFENSE_ANY.search(str(d))))
     df["promiscuous_fold_flag"] = df["description"].apply(lambda d: _is_promiscuous_fold_hit(str(d)))
     df["eukaryotic_desc_flag"]  = df["description"].apply(lambda d: _has_eukaryotic_description(str(d)))
-    df = df.sort_values(["gene", "composite_score", "evalue"], ascending=[True, False, True])
+    # hit domain: the web m8 has no lineage, so taxid via the NCBI taxdump, else name keywords
+    from taxonomy import add_kingdom_columns, kingdom_counts_log
+    add_kingdom_columns(df)
+    log(f"Hit domain source: {kingdom_counts_log(df)}")
+    df = gate_phage_boost(df)   # sorts by composite_score
     best, top3 = build_best_and_top3(df, sorted(df["gene"].unique()))
     best.to_csv(best_csv, index=False)
     top3.to_csv(top3_csv, index=False)
@@ -262,6 +273,7 @@ def webm8_to_best_hit(m8_path, best_csv, top3_csv, all_csv=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--fasta", help="hypothetical-protein AA FASTA (search step)")
+    ap.add_argument("--targets", help="CSV with a locus_tag column: search only these genes")
     ap.add_argument("--out", required=True, help="concatenated web m8 path")
     ap.add_argument("--from-m8", action="store_true",
                     help="skip the search; only bridge an existing m8 at --out")
@@ -288,14 +300,18 @@ def main():
         if not a.fasta:
             ap.error("--fasta is required unless --from-m8 is given")
         seqs = _read_fasta(a.fasta)
+        if a.targets:   # hypothetical genes only, as in local mode
+            import csv
+            want = {r["locus_tag"] for r in csv.DictReader(open(a.targets))}
+            seqs = [(n, q) for n, q in seqs if n.split(":", 1)[-1] in want]
         out.parent.mkdir(parents=True, exist_ok=True)
         fail_log = out.with_name("webapi_failures.log")
 
         log(f"Submitting {len(seqs)} proteins to {API_URL} (DBs: {', '.join(dbs)})")
 
         # --- preflight: reachability + VALIDATE the requested DB names ----------
-        # A single invalid database[] value makes the server ERROR the whole job
-        # (the symptom you hit). So we fetch the server's DB list and check.
+        # one invalid database[] value makes the server fail the whole job, so the
+        # requested names are checked against the server's DB list
         try:
             pr = requests.get(f"{API_URL}/databases/all", timeout=30)
             log(f"  [preflight] API reachable (GET /databases/all -> HTTP {pr.status_code})")
@@ -314,7 +330,7 @@ def main():
                 log(f"  [preflight] could not parse DB list ({e}); continuing.")
         except Exception as e:
             log(f"  [preflight][WARN] could not reach {API_URL} ({type(e).__name__}: {e}). "
-                f"On Maestro this MUST run on the LOGIN node (compute nodes have no internet).")
+                f"On a cluster this must run on the login node (compute nodes usually have no internet).")
 
         # --- clean sequences up front; drop too-short ones with a reason -------
         pairs, failures = [], []

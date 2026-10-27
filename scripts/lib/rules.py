@@ -21,7 +21,7 @@ What lives here:
 """
 import re
 
-from lexicon import DEFENSE_SYSTEM_TERMS, DEFENSE_TA_TERMS
+from lexicon import DEFENSE_SYSTEM_TERMS, DEFENSE_TA_TERMS, PHAGE_SPECIFIC, PHAGE_CONTEXT
 
 # Category of a toxin-antitoxin gene. PHROG / PHold convention: TA genes are
 # morons. Set it to "defense" to count TA systems as defense everywhere.
@@ -320,6 +320,104 @@ def _strip_decoration(s: str) -> str:
         prev = s
         s = _LEADING.sub("", s).strip()
     return s.strip() or prev
+
+
+# -----------------------------------------------------------------------------
+# PRODUCT-NAME CLEAN-UP (used by the FoldSeek top-3 vote, foldseek_scoring)
+# -----------------------------------------------------------------------------
+# Database titles often decorate a correct name: a hedge ('Putative ...'), a
+# phage-lineage family suffix (', HK97 family', ', TP901 family, core region'),
+# a fragment tag, or an organism prefix ('Cyanophage A-1(L) tail fiber',
+# 'Bacteriophage lambda head decoration protein D'). Unlike _strip_decoration
+# (short_name), this keeps a full name: 'Phage portal protein' stays as is.
+_HEDGE_PREFIX = re.compile(r"^(?:putative|probable|possible|predicted)\s+", re.I)
+_HEDGE_INNER  = re.compile(r",\s*(?:putative|probable|possible|predicted)\b", re.I)
+_FAMILY_TAIL  = re.compile(r"(?:,\s*[^,]*\b(?:family|subfamily|superfamily|region)\b[^,]*)+$", re.I)
+_ORGANISM_PFX = re.compile(r"^(?:bacteriophage|cyanophage|enterobacteria\s+phage|phage)\s+"
+                           r"(?!gp\d)(?:lambda|mu|[a-z0-9()\-]*\d[a-z0-9()\-]*)\s+", re.I)
+# fragment/partial, EC number, 'from bacteriophage X', 'lambda family',
+# 'HK97 gpNN family', ACLAME tag, '(Modular protein)'
+_NAME_DECORATION = tuple(_DECORATION[i] for i in (0, 1, 3, 6, 7, 8, 9))
+# phage STRUCTURAL proteins: there a ', X family' suffix is a lineage label
+# ('Phage portal protein, HK97 family'); on regulators/toxins it is the function
+# ('Phage transcriptional regulator, RinA family', 'Addiction module toxin, HicA family')
+_STRUCTURAL = re.compile(r"portal|capsid|\btail|tape.measure|baseplate|terminase|\bhead\b|\bneck\b|"
+                         r"connector|sheath|\btube\b|scaffold|decoration|prohead|collar|fib(?:er|re)", re.I)
+# a named phage function, gpNN labels excluded ('GpU' alone is no phage context)
+_PHAGE_FUNCTION = re.compile(rf"(?!gp\d)(?:{PHAGE_SPECIFIC.pattern})|{_STRUCTURAL.pattern}", re.I)
+_NAME_STOP = {"protein", "proteins", "phage", "prophage", "bacteriophage", "putative",
+              "probable", "possible", "predicted", "family", "the", "of", "and", "a",
+              "fragment", "like"}
+
+
+def _core_words(name: str) -> set:
+    return {t for t in re.findall(r"[a-z0-9]+", name.lower()) if t not in _NAME_STOP}
+
+
+def clean_name(desc: str) -> str:
+    """'Putative phage tail tube protein'            -> 'Phage tail tube protein'
+       'Phage portal protein, putative, A118 family' -> 'Phage portal protein'
+       'Cyanophage A-1(L) tail fiber'                -> 'Tail fiber'
+       'Addiction module toxin, HicA family'         -> unchanged (family IS the information)
+    A name is never cleaned into one without content words; then it is returned as is."""
+    orig = str(desc or "").strip()
+    d = orig
+    for pat in _NAME_DECORATION:
+        d = pat.sub("", d)
+    d = _HEDGE_INNER.sub("", d)
+    d = _HEDGE_PREFIX.sub("", d).strip()
+    # a lineage/family suffix on a phage STRUCTURAL protein adds little; elsewhere keep it
+    stripped = _FAMILY_TAIL.sub("", d).strip(" ,")
+    if stripped != d and len(stripped.split()) >= 2 and _STRUCTURAL.search(stripped):
+        d = stripped
+    # drop an organism prefix only when the rest still names a phage function
+    # ('Phage P1 portal protein' -> 'Portal protein'); 'Phage P2 GpU' and
+    # 'Bacteriophage Mu P protein' keep it, as it is their only phage context
+    rest = _ORGANISM_PFX.sub("", d).strip(" ,")
+    if rest != d and _PHAGE_FUNCTION.search(rest):
+        d = rest
+    if d == orig or not _core_words(d):
+        return orig                       # untouched (case included), or nothing left
+    # capitalise only a plain word exposed by removing a prefix ('putative tail
+    # tube' -> 'Tail tube'); keep 'rRNA', 'dnaB', 'IS110' as they are
+    if d[:1].islower() and d[1:2].islower() and orig[:1].isupper():
+        d = d[:1].upper() + d[1:]
+    return d
+
+
+def name_alternatives(desc: str) -> list:
+    """Core-word sets of a cleaned name; 'A/B' names give one set per alternative."""
+    return [w for w in (_core_words(a) for a in re.split(r"\s*/\s*", clean_name(desc))) if w]
+
+
+# Words that make a different protein of the one they qualify: a helper
+# ('tail fiber ASSEMBLY protein'), an opponent ('ANTI-repressor', 'integrase
+# INHIBITOR') or a partner ('integrase-BINDING protein').
+_OTHER_PROTEIN = re.compile(
+    r"^(?:anti\w*|assembly|chaperone|chaperonin|inhibitor|binding|maturation|"
+    r"activator|modulator|regulator|regulatory|adaptor|adapter|scaffold\w*)$", re.I)
+
+
+def _function_words(name: str) -> list:
+    """Core-word sets per alternative, with 'anti-X'/'X-binding' split so the
+    qualifier is its own word."""
+    return [_core_words(re.sub(r"[-/]", " ", a))
+            for a in re.split(r"\s*/\s*", clean_name(name)) if _core_words(a)]
+
+
+def same_function(a: str, b: str) -> bool:
+    """One name's core words are contained in the other's (for any alternative),
+    and the extra words do not make it another protein:
+    'Portal protein' ~ 'Phage portal protein, HK97 family';
+    'Putative transposase/integrase' ~ 'Site-specific integrase';
+    NOT 'Phage tail sheath' ~ 'Phage tail tape measure protein';
+    NOT 'Tail fiber protein' ~ 'Tail fiber assembly protein'; NOT 'Repressor' ~ 'Anti-repressor'."""
+    for x in _function_words(a):
+        for y in _function_words(b):
+            if x <= y or y <= x:
+                if not any(_OTHER_PROTEIN.match(w) for w in x ^ y):
+                    return True
+    return False
 
 
 def make_short_name(final_product, phold_phrog=None) -> str:

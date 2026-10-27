@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+"""Mock `phold` (run | remote | proteins-predict | proteins-compare)."""
+import argparse, os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _mocklib import read_fasta, fake_3di, phold_row, write_tsv, PHOLD_COLS, GENOME_COLS
+from pathlib import Path
+
+if len(sys.argv) < 2:
+    sys.exit("mock phold: subcommand required")
+sub = sys.argv[1]
+ap = argparse.ArgumentParser()
+ap.add_argument("-i"); ap.add_argument("-o"); ap.add_argument("-t"); ap.add_argument("-d")
+ap.add_argument("--prefix", default="phold"); ap.add_argument("--predictions_dir")
+ap.add_argument("--batch_size"); ap.add_argument("-f", action="store_true")
+for flag in ("--cpu", "--autotune", "--foldseek_gpu"):
+    ap.add_argument(flag, action="store_true")
+a = ap.parse_args(sys.argv[2:])
+out = Path(a.o); out.mkdir(parents=True, exist_ok=True)
+if os.environ.get("MOCK_SLEEP"):
+    import time; time.sleep(float(os.environ["MOCK_SLEEP"]))
+if os.environ.get("MOCK_FAIL") and os.environ["MOCK_FAIL"] in (a.i or ""):
+    sys.exit(f"mock phold: forced failure for {a.i} (MOCK_FAIL)")
+
+if sub in ("run", "remote"):
+    from Bio import SeqIO
+    rows, aa, di = [], [], []
+    for rec in SeqIO.parse(a.i, "genbank"):
+        for f in rec.features:
+            if f.type != "CDS":
+                continue
+            lt = f.qualifiers["locus_tag"][0]
+            seq = f.qualifiers["translation"][0]
+            row = phold_row(lt, seq, contig=rec.id)
+            row.update(start=int(f.location.start) + 1, end=int(f.location.end),
+                       strand="+" if f.location.strand == 1 else "-", transl_table=11)
+            rows.append(row)
+            aa.append((f"{a.prefix}:{lt}", seq)); di.append((f"{a.prefix}:{lt}", fake_3di(seq, lt)))
+    write_tsv(out / f"{a.prefix}_per_cds_predictions.tsv", rows, GENOME_COLS)
+    for name, recs in (("aa", aa), ("3di", di)):
+        with open(out / f"{a.prefix}_{name}.fasta", "w") as fh:
+            for h, s in recs:
+                fh.write(f">{h}\n{s}\n")
+elif sub == "proteins-predict":
+    recs = read_fasta(a.i)
+    with open(out / "phold_3di.fasta", "w") as f3, open(out / "phold_aa.fasta", "w") as fa:
+        for h, s in recs:
+            gid = h.split()[0]
+            f3.write(f">{gid}\n{fake_3di(s, gid)}\n"); fa.write(f">{gid}\n{s}\n")
+elif sub == "proteins-compare":
+    recs = read_fasta(a.i)
+    pred = Path(a.predictions_dir)
+    rows = [phold_row(h.split()[0], s) for h, s in recs]
+    write_tsv(out / "phold_per_cds_predictions.tsv", rows, PHOLD_COLS)
+    for n in ("phold_3di.fasta", "phold_aa.fasta"):
+        (out / n).write_text((pred / n).read_text())
+    sd = out / "sub_db_tophits"; sd.mkdir(exist_ok=True)
+    for src in ("acr", "vfdb", "card", "netflax", "defensefinder"):
+        (sd / f"{src}_cds_predictions.tsv").touch()
+else:
+    sys.exit(f"mock phold: unknown subcommand {sub}")
+print(f"mock phold {sub}: ok -> {out}")

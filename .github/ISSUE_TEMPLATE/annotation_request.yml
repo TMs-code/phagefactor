@@ -1,0 +1,36 @@
+name: Annotation request
+description: Ask for phageFACTor to be run for you (full databases, nothing to install)
+title: "Annotation request: "
+labels: ["annotation request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for your interest in phageFACTor! Describe your dataset below.
+        **Do not attach sequences here** (issues are public): I will reply with how to send them.
+  - type: input
+    id: count
+    attributes:
+      label: Number of genomes or proteins
+      description: e.g. "12 prophage genomes" or "850 proteins"
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Input mode
+      description: "See docs/modes.md in the repository if unsure."
+      options:
+        - genome (nucleotide FASTA, genes called by phageFACTor)
+        - protein (genes already called; protein FASTA)
+        - pangenome (gene-family representatives)
+        - not sure
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else (optional)
+      description: Host organism, whether you can share the host genome, deadline...
+    validations:
+      required: false

@@ -9,7 +9,7 @@ below with a small worked example. Auto‑detection (`detect_input_type.py`) rea
 example_data/
 ├── genome_2campy/     # Example 1: genome mode  (2 Campylobacter prophages) — shipped, ready to run
 ├── protein_2citro/    # Example 2: protein / pre‑annotated‑CDS mode (2 Citrobacter prophages: phiNP, phiSM)
-├── run_smoke_test.sh  # end‑to‑end check on Example 1 (WebAPI mode, no local DB)
+├── run_smoke_test.sh  # end‑to‑end check on Example 1 (small local DBs; SEARCH_MODE=webapi for none)
 └── pangenome/         # Example 3: pangenome mode (bulk nucleotide CDS, no genome coords) — worked example to add
 ```
 
@@ -24,7 +24,7 @@ input/
 │   └── CJIE2.fasta
 └── prophage_list.txt          # the prophage basenames, one per line (CJIE1 / CJIE2)
 ```
-`.input_type` is written automatically (= `genome`). Run: `bash submit_all.sh`.
+The mode is auto-detected (`genome`). Run: copy `input/` into a project (`phagefactor init`), then `phagefactor run`.
 
 ---
 ## Example 2 — PROTEIN / pre‑annotated‑CDS mode (2 Citrobacter prophages: phiNP, phiSM)
@@ -52,7 +52,7 @@ is_hypo_emapper, is_hypothetical`
   target set.
 - You build this table once from your host annotation (GFF + proteins.fa + eggNOG +
   the prophage coordinate windows); `protein_2citro/` is a worked example of the result.
-Run: `bash submit_all.sh` (auto‑detects protein).
+Run: `phagefactor run` in a project holding this `input/` (auto‑detects protein).
 
 ---
 ## Example 3 — PANGENOME mode
@@ -63,9 +63,9 @@ input/
 └── fasta/
     └── <name>.fa          # one nucleotide CDS per record (Roary group in the header)
 ```
-Leave `INPUT_MODE` unset (auto‑detect returns `pangenome`) or set `INPUT_MODE=pangenome`,
-then `bash submit_all.sh`. It translates the CDS to protein (clean `pang_NNNNN` ids +
-`input/pangenome_id_map.csv`), runs protein mode (minus `prophage_windows.csv` + `genome/`
+Leave `input_mode` on `auto` (auto‑detect returns `pangenome`) or set it to `pangenome`,
+then `phagefactor run`. It translates the CDS to protein (clean `pang_NNNNN` ids +
+`<run>/split/pangenome/pangenome_id_map.csv`), runs protein mode (minus `prophage_windows.csv` + `genome/`
 → **no GBK / no phynteny**), and after curation builds
 `04_output/pangenome_reference.{csv,xlsx,faa}` (one row per group + a DIAMOND/MMseqs‑ready
 FASTA) for homology‑based annotation transfer. A shipped worked example is to be added.
@@ -75,7 +75,8 @@ FASTA) for homology‑based annotation transfer. A shipped worked example is to 
 `04_output/final_annotations_table.csv` (one row per CDS) + `04_output/curation/review_suggested.csv`
 (the few genes flagged for a human look) + `05_phynteny/final_annotations_integrated.csv`
 after the phynteny step. `run_smoke_test.sh` checks the table's schema and annotated
-fraction; it runs WebAPI mode (no local DB) so a check needs no big database.
+fraction; it uses the small local databases (pdb100 + swissprot), or the web API with
+`SEARCH_MODE=webapi`, so a check needs no big database.
 
 > Status: both `genome_2campy/` and `protein_2citro/` (phiNP + phiSM, 173 proteins) are
 > shipped and runnable. After a run you may commit a small `final_annotations_table.csv`

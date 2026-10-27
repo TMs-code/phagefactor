@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""Mock foldseek: the subcommands 02d_foldseek_3di.py uses (version, tsv2db,
+search, convertalis, *--help). convertalis emits deterministic synthetic hits."""
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _mocklib import rng, FS_DESCS
+from pathlib import Path
+
+args = sys.argv[1:]
+if not args or args[0] == "version":
+    print("mock-foldseek 10.mock"); sys.exit(0)
+sub = args[0]
+if "--help" in args:
+    print(f"mock foldseek {sub} help"); sys.exit(0)
+if sub == "tsv2db":
+    src, dst = Path(args[1]), Path(args[2])
+    lines = [l for l in src.read_text().splitlines() if l]
+    dst.write_text("\n".join(lines) + "\n")
+    off = 0
+    with open(str(dst) + ".index", "w") as ix:
+        for l in lines:
+            k = l.split("\t", 1)[0]; ix.write(f"{k}\t{off}\t{len(l) + 1}\n"); off += len(l) + 1
+    Path(str(dst) + ".dbtype").write_text("0")
+elif sub == "search":
+    qdb, tdb, res = args[1], args[2], Path(args[3])
+    res.write_text("mock result\n")
+elif sub == "convertalis":
+    qdb, tdb, res, out = args[1], args[2], args[3], Path(args[4])
+    fmt = args[args.index("--format-output") + 1].split(",")
+    genes = [l.split("\t", 1)[1] for l in Path(qdb + "_h").read_text().splitlines() if "\t" in l]
+    dbname = Path(tdb).name
+    with open(out, "w") as fh:
+        for g in genes:
+            r = rng("fs", dbname, g)
+            for k in range(r.choice([0, 1, 2, 3, 3])):
+                desc = r.choice(FS_DESCS)
+                ev = 10 ** -r.uniform(1, 30)
+                bits = r.uniform(40, 900)
+                vals = {"query": g, "theader": f"{dbname}_ACC{r.randint(1, 99999)} {desc}",
+                        "fident": f"{r.uniform(0.1, 0.9):.3f}", "alnlen": "120", "mismatch": "60",
+                        "gapopen": "2", "qstart": "1", "qend": "120", "tstart": "1", "tend": "118",
+                        "evalue": f"{ev:.3e}", "bits": f"{bits:.0f}",
+                        "qcov": f"{r.uniform(0.3, 1.0):.2f}",
+                        "taxid": "10239", "taxname": "Escherichia phage T4",
+                        "taxlineage": "-_Viruses;-_Duplodnaviria;c_Caudoviricetes;s_Escherichia phage T4"}
+                fh.write("\t".join(vals.get(c, "") for c in fmt) + "\n")
+elif sub in ("createindex", "databases"):
+    pass
+else:
+    print(f"mock foldseek: unsupported subcommand {sub}", file=sys.stderr); sys.exit(1)

@@ -16,11 +16,13 @@ ESMFold caps at ~400 aa, which excludes large structural proteins (tape measure,
 tail fibre, portal, terminase large). Those are reported by name, never dropped
 silently.
 """
+import gzip
 import hashlib
 import io
 import os
 import tarfile
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -34,6 +36,7 @@ FOLDSEEK_API = "https://search.foldseek.com/api"
 
 ESMFOLD_MAX_LEN = int(os.environ.get("ESMFOLD_MAX_LEN", "400"))
 ESMFOLD_DELAY = float(os.environ.get("ESMFOLD_DELAY", "1.5"))   # politeness
+WEB_WORKERS = int(os.environ.get("PHAGEFACTOR_WEB_WORKERS", "4"))  # proteins in flight
 SUBMIT_DELAY = float(os.environ.get("FOLDSEEK_SUBMIT_DELAY", "4"))
 POLL_SECS = 5
 MAX_WAIT = int(os.environ.get("FOLDSEEK_MAX_WAIT", "300"))
@@ -50,6 +53,15 @@ def _key(seq: str) -> str:
     return hashlib.sha256(seq.strip().upper().encode()).hexdigest()[:24]
 
 
+def _write_atomic(path: Path, text: str) -> None:
+    """Write via a temporary file + rename: jobs sharing the cache never read a
+    partial file. A .gz path is written gzip-compressed."""
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    data = text.encode()
+    tmp.write_bytes(gzip.compress(data) if path.suffix == ".gz" else data)
+    os.replace(tmp, path)
+
+
 def cache_root() -> Path:
     """Persistent across runs: structures do not depend on a run."""
     env = os.environ.get("PHAGEFACTOR_WEB_CACHE")
@@ -58,11 +70,10 @@ def cache_root() -> Path:
     db_root = os.environ.get("PHAGEFACTOR_DB_ROOT")
     if db_root:
         return Path(db_root) / "web_cache"
-    here = Path(__file__).resolve().parent
-    for d in [here, *here.parents]:
-        if (d / "config" / "config.yaml").is_file():
-            return d / "databases" / "web_cache"
-    return here.parents[1] / "databases" / "web_cache"
+    # the resolved database root (project config > ~/.config/phagefactor
+    # settings > <project>/databases), never the code directory
+    from config import DB_ROOT
+    return Path(DB_ROOT) / "web_cache"
 
 
 # =============================================================================
@@ -100,7 +111,7 @@ def fold(seq: str, root: Optional[Path] = None) -> Tuple[Optional[str], str]:
             time.sleep(ESMFOLD_DELAY)
 
         if r.status_code == 200 and len(r.text) > 100 and "ATOM" in r.text:
-            pdb_path.write_text(r.text)
+            _write_atomic(pdb_path, r.text)
             return r.text, "folded"
         if r.status_code in (429, 500, 502, 503, 504):
             log(f"      ESMFold HTTP {r.status_code} (len={len(seq)} aa) — "
@@ -143,6 +154,23 @@ def _poll(ticket: str) -> str:
     return "TIMEOUT"
 
 
+# qaln, taln, tcoords, tseq: unused downstream and most of the m8 size; kept as
+# empty columns so the layout stays the server's
+_DROP_COLS = (15, 16, 17, 18)
+
+
+def _slim_m8(text: str) -> str:
+    out = []
+    for line in text.splitlines():
+        f = line.split("\t")
+        if len(f) <= max(_DROP_COLS):
+            continue        # the server's taxonomy report rows, not hits
+        for i in _DROP_COLS:
+            f[i] = ""
+        out.append("\t".join(f))
+    return "\n".join(out) + ("\n" if out else "")
+
+
 def _download_m8(ticket: str) -> str:
     r = requests.get(f"{FOLDSEEK_API}/result/download/{ticket}", timeout=180, stream=True)
     r.raise_for_status()
@@ -168,10 +196,12 @@ def search(seq: str, pdb_text: str, dbs: List[str], label: str,
     dbkey = hashlib.sha256(",".join(sorted(dbs)).encode()).hexdigest()[:8]
     mdir = root / "searches" / dbkey
     mdir.mkdir(parents=True, exist_ok=True)
-    m8_path = mdir / f"{_key(seq)}.m8"
+    m8_path = mdir / f"{_key(seq)}.m8.gz"
+    plain = mdir / f"{_key(seq)}.m8"           # uncompressed entries are still read
 
-    if m8_path.exists():
-        txt = m8_path.read_text()
+    if m8_path.exists() or plain.exists():
+        txt = (gzip.decompress(m8_path.read_bytes()).decode() if m8_path.exists()
+               else plain.read_text())
         return txt, ("empty" if not txt.strip() else "cached")
 
     for attempt in range(1, ERROR_RETRIES + 2):
@@ -183,11 +213,11 @@ def search(seq: str, pdb_text: str, dbs: List[str], label: str,
             st = "EXC"
         if st == "COMPLETE":
             try:
-                m8 = _download_m8(ticket)
+                m8 = _slim_m8(_download_m8(ticket))
             except Exception as e:
                 log(f"      download EXC {type(e).__name__}: {e}")
                 return None, "failed"
-            m8_path.write_text(m8)          # empty file == "no hits", cached
+            _write_atomic(m8_path, m8)      # empty file == "no hits", cached
             time.sleep(SUBMIT_DELAY)
             return m8, ("empty" if not m8.strip() else "searched")
         # ERROR / TIMEOUT / EXC are transient -> retry, cache NOTHING
@@ -237,49 +267,55 @@ def fold_and_search(pairs: Iterable[Tuple[str, str]], dbs: List[str],
         raise SystemExit(
             "\n[02w] The ESMFold API (api.esmatlas.com) is not answering.\n"
             "  It could not fold a 27 aa peptide, so this is the SERVICE, not your\n"
-            "  proteins. That endpoint has a long history of outages and SSL errors.\n"
             "  Web search needs structures, so without ESMFold it cannot run.\n"
             "\n  Use instead:\n"
             "   1. LOCAL search, small DBs (~5.5 GB, no folding -- phold already\n"
             "      wrote the 3Di):\n"
-            "        bash steps/00b_setup_databases.sh --pdb100 --swissprot\n"
-            "        FOLDSEEK_DBS=\"afdb-swissprot pdb100\" SEARCH_MODE=local \\\n"
-            "            RESUME=1 SKIP_PHAROKKA=1 SKIP_PHOLD=1 bash run_local.sh\n"
+            "        phagefactor databases --pdb100 --swissprot\n"
+            "        phagefactor run --config search_mode=local \\\n"
+            "            foldseek_dbs=\"afdb-swissprot pdb100\"   (pharokka/phold are kept)\n"
             "   2. the cluster, where afdb50 is on disk\n"
-            "   3. SEARCH_MODE=none -- curation on pharokka + phold only\n"
+            "   3. search_mode=none -- curation on pharokka + phold only\n"
             "\n  Retry web mode later; the structure cache means nothing is lost.\n")
 
-    for i, (name, seq) in enumerate(pairs, 1):
+    def _one(seq):
         pdb_text, fstat = fold(seq, root)
-        if fstat == "too_long":
-            rep["too_long"].append((name, len(seq)))
-            log(f"  [{i}/{len(pairs)}] {name}: {len(seq)} aa > {ESMFOLD_MAX_LEN} — SKIPPED")
-            continue
         if pdb_text is None:
-            rep["fold_failed"].append(name)
-            log(f"  [{i}/{len(pairs)}] {name}: fold FAILED")
-            continue
+            return fstat, None, None
+        m8, sstat = search(seq, pdb_text, dbs, _key(seq), root)
+        return fstat, m8, sstat
 
-        m8, sstat = search(seq, pdb_text, dbs, name, root)
-        if m8 is None:
-            rep["search_failed"].append(name)
-            log(f"  [{i}/{len(pairs)}] {name}: search FAILED (will retry next run)")
-            continue
-        if sstat == "empty":
-            rep["no_hits"].append(name)
-        elif sstat == "cached":
-            rep["cached"].append(name)
-        else:
-            rep["ok"].append(name)
+    # a few proteins in flight at once; results are handled in input order
+    with ThreadPoolExecutor(max_workers=WEB_WORKERS) as pool:
+        results = pool.map(_one, [seq for _, seq in pairs])
+        for i, ((name, seq), (fstat, m8, sstat)) in enumerate(zip(pairs, results), 1):
+            if fstat == "too_long":
+                rep["too_long"].append((name, len(seq)))
+                log(f"  [{i}/{len(pairs)}] {name}: {len(seq)} aa > {ESMFOLD_MAX_LEN} — SKIPPED")
+                continue
+            if fstat == "failed":
+                rep["fold_failed"].append(name)
+                log(f"  [{i}/{len(pairs)}] {name}: fold FAILED")
+                continue
+            if m8 is None:
+                rep["search_failed"].append(name)
+                log(f"  [{i}/{len(pairs)}] {name}: search FAILED (will retry next run)")
+                continue
+            if sstat == "empty":
+                rep["no_hits"].append(name)
+            elif sstat == "cached":
+                rep["cached"].append(name)
+            else:
+                rep["ok"].append(name)
 
-        # rewrite query id -> gene name
-        for line in m8.splitlines():
-            if line.strip():
-                parts = line.split("\t")
-                parts[0] = name
-                chunks.append("\t".join(parts))
-        log(f"  [{i}/{len(pairs)}] {name}: fold={fstat} search={sstat} "
-            f"({len([l for l in m8.splitlines() if l.strip()])} hits)")
+            # rewrite query id -> gene name
+            for line in m8.splitlines():
+                if line.strip():
+                    parts = line.split("\t")
+                    parts[0] = name
+                    chunks.append("\t".join(parts))
+            log(f"  [{i}/{len(pairs)}] {name}: fold={fstat} search={sstat} "
+                f"({len([l for l in m8.splitlines() if l.strip()])} hits)")
 
     return "\n".join(chunks) + ("\n" if chunks else ""), rep
 

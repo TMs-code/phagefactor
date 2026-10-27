@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Mock micromamba: `micromamba run -n <env> <cmd...>` -> run <cmd...> as is.
+if [[ "$1" == "run" ]]; then
+  shift; [[ "$1" == "-n" ]] && shift 2
+  exec "$@"
+fi
+echo "mock micromamba: only 'run -n <env> cmd' is supported" >&2; exit 1

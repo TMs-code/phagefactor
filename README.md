@@ -13,24 +13,33 @@ engine:
    (PDB100, AFDB-SwissProt, AFDB50) for hits Phold misses.
 
 A comparison + curation step (**the FAC core**) reconciles Phold vs custom-FoldSeek
-per gene, assigns an evidence category, and emits a curated table + updated GenBank.
-Optional: **Phynteny** synteny categories and a positional C1/Cro switch heuristic.
+per gene, assigns an evidence category, and emits a curated table, an updated GenBank
+and an **interactive HTML report** (genome maps coloured by function, and for every
+gene the evidence behind its call). Optional: **Phynteny** synteny categories and a
+positional C1/Cro switch heuristic.
 
-Validated on *Campylobacter*, *Citrobacter* and OMM12-consortium prophages.
+Developed on the prophages of the OMM12 bacterial consortium and the Philympics 2021
+prophage benchmark set ([Roach et al. 2021](https://f1000research.com/articles/10-758/v2)),
+with manual curation of the resulting annotations.
 
 ---
 
-## Where to run what
+## How it runs
 
-| | how | databases |
+phageFACTor is a Snakemake workflow driven by one command, `phagefactor`. It
+re-runs only what changed: edit a curation rule and only curation re-runs; a
+crashed run resumes where it stopped.
+
+| | command | databases |
 |---|---|---|
-| **Cluster** (production) | `bash submit_all.sh` | afdb50 + pdb100 + swissprot |
-| **Local** (testing, reviewers) | `bash run_local.sh` | pdb100 + swissprot (~5.5 GB) |
+| **Cluster** (production) | `phagefactor run --slurm` | afdb50 + pdb100 + swissprot |
+| **One machine** (testing, small datasets) | `phagefactor run` | pdb100 + swissprot (~5.5 GB) |
+| **No FoldSeek databases** | `--config search_mode=webapi` | none (public FoldSeek server) |
 
-afdb50 needs ~60 GB and a large-memory node, so full-depth annotation is a
-cluster job. `SEARCH_MODE=webapi` searches without local databases (it folds
-queries with ESMFold first); the public ESMFold service is intermittent, so
-treat it as experimental.
+afdb50 (~60 GB, plus a ~350 GB index loaded into RAM on a 256 GB node) makes
+full-depth annotation a cluster job; its `_ca` files can be deleted.
+`search_mode=webapi` searches the same three databases on the public FoldSeek
+server, after folding with ESMFold (proteins ≤ 400 aa).
 
 - **Genome mode**: one nucleotide FASTA per prophage → Pharokka → Phold → FoldSeek.
 - **Protein mode**: bulk protein FASTA (all treated as hypothetical) → Phold proteins
@@ -42,126 +51,72 @@ treat it as experimental.
   (`pangenome_reference.{csv,xlsx,faa}`) is built for transferring annotations to a
   larger protein collection by homology (DIAMOND/MMseqs2). See [`docs/modes.md`](docs/modes.md).
 - **Search mode** is chosen at step 02: local `foldseek` against installed DBs, or the
-  public FoldSeek web server (ProstT5 runs server-side, no DB download).
+  public FoldSeek web server (no FoldSeek DB download).
 
 See [`docs/modes.md`](docs/modes.md) for the full matrix.
+
+---
+
+## No cluster or databases? Request a run
+
+I can run phageFACTor for you on our HPC, with the full databases and the afdb50
+index, at no cost. Open an
+[annotation request](https://github.com/TMs-code/phagefactor/issues/new?template=annotation_request.yml)
+with the number of genomes (or proteins) and the input mode. **Do not attach
+sequences to the issue**: I will reply with how to send them, plus the host genome if
+you have one. Best effort, as cluster time allows.
 
 ---
 
 ## Install
 
 ```bash
-# 1. get the code
 git clone https://github.com/TMs-code/phagefactor.git
-cd phagefactor
+export PATH="$PWD/phagefactor/bin:$PATH"           # the `phagefactor` command
 
-# 2. environment (micromamba recommended; conda works for non-org users)
-micromamba env create -f environment.yml      # creates 'phagefactor'
-micromamba activate phagefactor
-
-# 3. databases (one-time) — see docs/databases.md
-#    python scripts/tools/check_databases.py   # what you have / what is missing
-
-# 4. configure for your machine — see "Configure" below
+micromamba env create -f phagefactor/envs/pf_snakemake.yaml   # snakemake (driver)
+micromamba activate pf_snakemake
+phagefactor install-envs        # tool env (pharokka, phold, foldseek) + phynteny env
+phagefactor databases /data/phagefactor_db --pharokka --phold --pdb100 --swissprot --taxdump
+phagefactor check               # what is installed / missing
 ```
 
-The repo ships path-free (blank database fields, generic SLURM settings). You
-adapt it with **environment variables** — no need to touch the committed
-`config/config.yaml` / `config.sh`. The analysis scripts never need editing.
+`phagefactor databases <dir>` records `<dir>` in `~/.config/phagefactor/settings.yaml`,
+so every project uses the same databases. afdb50 and its index are cluster
+downloads: [`docs/databases.md`](docs/databases.md).
 
 ---
 
-## Configure (adapt to your machine)
+## Run
 
-**Recommended: a personal env file.** Put your machine's values in one small
-`env_<name>.sh` (gitignored — keep paths/email out of the repo) and `source` it
-before running, leaving the shipped config untouched. Full details:
-[`docs/configure.md`](docs/configure.md).
+A **project dir** holds the settings, the input and the runs.
 
 ```bash
-# env_mymachine.sh  —  source before submit_all.sh
-export PHAGEFACTOR_INPUT=/data/jobs/myjob/input      # holds fasta/ + prophage_list.txt
-export PHAGEFACTOR_RUN_BASE=/data/jobs/myjob         # outputs -> <base>/run, run_002, ...
-export PHAGEFACTOR_DB_ROOT=/data/databases           # -> <root>/pharokka_db, <root>/foldseek_dbs
-export FOLDSEEK_DB_ROOT="${PHAGEFACTOR_DB_ROOT}/foldseek_dbs"
-export SLURM_EMAIL=you@example.org                   # blank = no notifications
-export MAMBA_ENV=phagefactor                         # env holding pharokka+phold+foldseek
-export SCRATCH_TMPDIR=/local/scratch/tmp             # fast local disk for temp files
-```
-```bash
-source env_mymachine.sh && bash submit_all.sh
+phagefactor init myjob           # myjob/config/{config,workflow}.yaml + myjob/input/
+cp my_prophages/*.fasta myjob/input/fasta/
+ls myjob/input/fasta | sed 's/\.fasta$//' > myjob/input/prophage_list.txt   # genome mode
+cd myjob
+phagefactor run -n               # dry run: what would run
+phagefactor run --slurm          # SLURM, from the login node (inside tmux/screen)
+phagefactor run                  # or on this machine
 ```
 
-Every setting resolves as **env var > `config` value > default**, so you can also
-edit `config/config.yaml`/`config.sh` directly if you prefer.
+Results go to `myjob/runs/run/`. Relaunching the same command after an edit or
+a crash redoes only what is needed; a new analysis is a new project dir (or
+`--config run_dir=runs/<name>`). Set the host genus, partition, QOS and email in
+`config/config.yaml` and `config/workflow.yaml`; any key can also be given on the
+command line (`--config search_mode=none`). Details:
+[`docs/configure.md`](docs/configure.md), [`docs/snakemake.md`](docs/snakemake.md).
 
-| What | env var | `config` fallback | Default |
-|---|---|---|---|
-| Input folder | `PHAGEFACTOR_INPUT` | `paths.input_dir` | `<repo>/input` |
-| Run-dir parent | `PHAGEFACTOR_RUN_BASE` | `paths.run_base` | `<repo>/runs` |
-| FoldSeek DB root | `FOLDSEEK_DB_ROOT` | `databases.foldseek_db_root` | — |
-| Pharokka / FoldSeek DB parent | `PHAGEFACTOR_DB_ROOT` | `config.sh DB_ROOT` | `<repo>/databases` |
-| Email | `SLURM_EMAIL` | `slurm.email` | blank |
-| Conda/mamba env | `MAMBA_ENV` | `config.sh` | `phagefactor` |
-| Scratch dir | `SCRATCH_TMPDIR` | `config.sh` | `/tmp` |
+phold runs on CPU by default (GPU needs a *verified* CUDA env: `phold_gpu: true`).
+Without a 256 GB node, search pdb100 + swissprot only, or use `search_mode=webapi`
+([`docs/databases.md`](docs/databases.md)).
 
-Outputs go to a **versioned** run dir under `run_base` — `run/`, then `run_002/`,
-… — a new submission **never overwrites** a previous run. To reuse one instead:
-`RESUME=1 bash submit_all.sh` (most recent run) or `PHAGEFACTOR_RUN_DIR=/path` (a
-specific run); add `SKIP_PHAROKKA=1 SKIP_PHOLD=1` to skip already-done steps.
-
-**Cluster notes:** partition/QOS default to `common`/`fast`; phold is CPU by default (GPU needs a *verified* CUDA env or it
-silently falls back); the local-FoldSeek step (02) loads the afdb50 index into RAM
-and requests **256 GB** — on smaller nodes use WebAPI mode or the low-RAM option in
-[`docs/databases.md`](docs/databases.md).
-
----
-
-## Run on a cluster (SLURM) — the normal way
-
-`submit_all.sh` (repo root) is the single driver. It auto-detects genome vs protein mode
-from the input folder, submits the SLURM steps in `steps/`, and chains them with
-dependencies:
-
-```bash
-# point at the code once (stays pristine); data + outputs live elsewhere:
-cd /path/to/phagefactor
-export PHAGEFACTOR_INPUT=/path/to/job/input        # holds fasta/ + prophage_list.txt
-export PHAGEFACTOR_RUN_BASE=/path/to/job            # runs land in <base>/run, run_002, ...
-bash submit_all.sh                                  # pharokka → phold → FoldSeek → compare → curate → output
-```
-
-`submit_all.sh` prints the resolved run dir and the optional follow-up to add phynteny +
-C1/Cro synteny (already wired with `--chdir` so its logs join the run):
-
-```bash
-sbatch --chdir=<run_dir> --dependency=afterok:<jobid> steps/05_phynteny.sh
-# review the few flagged genes:  <run_dir>/04_output/curation/review_suggested.csv
-```
-
-`SEARCH_MODE`: `local` (default) · `webapi` (no local DBs, experimental) ·
-`none` (pharokka + phold only). `python scripts/tools/check_databases.py` shows
-what is installed.
-
----
-
-## Run on one machine (no SLURM) — testing
-
-`run_local.sh` runs the same steps sequentially. Two *Campylobacter* prophages ship
-in `example_data/genome_2campy/`:
-
-```bash
-bash steps/00b_setup_databases.sh --pharokka --pdb100 --swissprot   # ~7 GB, one-time
-cp -r example_data/genome_2campy/input/* input/
-FOLDSEEK_DBS="afdb-swissprot pdb100" bash run_local.sh
-```
-
-Without afdb50 the annotation rate is lower than a cluster run — this is for
-checking the pipeline works, not for production. `bash example_data/run_smoke_test.sh`
-does the same and verifies the output schema.
-
-See [`example_data/README.md`](example_data/README.md) for all input modes and the
-column reference.
+**Try it:** `bash example_data/run_smoke_test.sh` runs the two *Campylobacter*
+prophages of `example_data/genome_2campy/` with the small databases and checks the
+output. Without afdb50 the annotation rate is lower than a cluster run: this checks
+that the pipeline works, it is not a production run. All input modes and the column
+reference: [`example_data/README.md`](example_data/README.md).
 
 ---
 
@@ -171,16 +126,22 @@ column reference.
 curated `final_product`/`short_name`, the **evidence category**, and full traceability
 (Pharokka / Phold / FoldSeek columns side by side). Evidence categories:
 
-| Category | Meaning |
+| `annotation_source` | Meaning |
 |---|---|
-| **both agree** | Phold and custom-FoldSeek concur |
-| **merged** | combined into one more-specific call |
-| **structural-only** | custom-FoldSeek structural homology, no Phold corroboration |
-| **phold-only** | Phold call, no FoldSeek support |
-| **still-hypothetical** | neither found informative evidence |
+| `both agree` | Phold and FoldSeek name the same function |
+| `merged` | the two calls combined into one more specific name |
+| `foldseek` | FoldSeek-only: named from the FoldSeek hits, Phold had no informative call |
+| `phold` | Phold-only: named from Phold, no FoldSeek support |
+| `no_informative_hit` / `no_hit` | still hypothetical: hits without a function, or none |
+
+`<run_dir>/04_output/report.html` — the interactive report, one self-contained file that
+opens in any browser offline: a genome map per prophage coloured by function, a
+searchable/filterable table, and per gene the evidence behind the call (Phold, FoldSeek
+top-3, curation reason, phynteny). For a run made before version 1.1:
+`python scripts/09_report.py --run_dir <run_dir>`.
 
 Plus `updated_prophages.gb` (GenBank with `/product`, `/function`, `/note` provenance),
-and after the phynteny step, `05_phynteny/final_annotations_integrated.csv` +
+and from the phynteny step, `05_phynteny/final_annotations_integrated.csv` +
 `05_phynteny/final_with_synteny.gb`. In **pangenome sub-mode** there is no GenBank;
 instead `04_output/pangenome_reference.{csv,xlsx,faa}` is produced (one row per
 group + a DIAMOND/MMseqs-ready FASTA).
@@ -190,18 +151,29 @@ Full column reference: [`docs/outputs.md`](docs/outputs.md).
 
 ## How annotations are decided
 
-The curation engine is deliberately conservative: ambiguous genes are routed to
-review rather than auto-annotated. Core principles:
+Every call is made by explicit rules and is traceable: the final table records the
+rule that decided each gene (`curation_action`) and why (`curation_explanation`).
+Ambiguous genes go to review instead of being guessed.
 
-- **A label is not a function.** A FoldSeek-only name that is only a domain/family
-  label ("SHOCT domain-containing protein") is not used as the final annotation;
-  it stays in `fs_description` / `fs_top3`.
+- **Evidence is weighed, not just collected.** Each FoldSeek hit is rated
+  CONFIDENT / GOOD / BORDERLINE / WEAK from its e-value, score and agreement among
+  the top-3 hits. A BORDERLINE hit never names a gene on its own.
+- **Phage-aware ranking.** Hits naming a phage function are ranked up (×2 / ×1.5),
+  uninformative labels down; the boost never lifts a weak hit above a confident one.
+- **Taxonomy-aware.** Each hit's domain comes from the FoldSeek lineage or NCBI
+  taxid. Eukaryotic hits, mostly look-alike folds, get no phage boost, never outrank
+  a confident bacterial hit, and are demoted unless a bacterial hit names the same
+  function.
+- **Specific beats generic.** A generic Phold call
+  ("transcriptional regulator") gives way to a confident specific FoldSeek name;
+  complementary calls are merged ("tail protein (Late control protein)").
+- **Conflicts are flagged, not resolved by guesswork.** Confident calls that
+  disagree, or that place a protein on the head versus the tail, go to review.
+- **A label is not a function.** Domain/family labels and structure titles are not
+  used as names, except characterized domains (`lexicon.RELEVANT_DOMAINS`, sent to
+  review) and labels renamed by a naming rule (`rules.UPGRADE_RULES`).
 - **Reference sub-databases are weighed by identity.** A Phold hit to NetFlaX, VFDB
-  or CARD below 40% identity yields to a CONFIDENT FoldSeek call that names a function.
-- **Structure titles are not names.** PDB titles are reduced to the protein name
-  they contain, or replaced by a top-3 hit that names a function.
-- **Stronger evidence wins.** A name repeated in the FoldSeek top-3 replaces the
-  best hit only if its alignment score is at least as high.
+  or CARD below 40% identity yields to a confident FoldSeek call that names a function.
 
 All vocabulary lives in `scripts/lib/lexicon.py` (word-lists, order irrelevant) and
 `scripts/lib/rules.py` (ordered rules: name upgrades, PHROG category, `short_name`).
