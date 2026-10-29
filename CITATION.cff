@@ -7,7 +7,7 @@ authors:
     family-names: Moreau
     affiliation: Institut Pasteur
 license: MIT
-version: 1.1.0
+version: 1.2.0
 repository-code: "https://github.com/TMs-code/phageFACTor"
 keywords:
   - prophage

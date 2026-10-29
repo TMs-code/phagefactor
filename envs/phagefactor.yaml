@@ -1,11 +1,14 @@
 # Tool environment: pharokka + phold + foldseek and the Python libraries of the
 # analysis scripts. Created by `phagefactor install-envs` (or:
-#   micromamba env create -f envs/phagefactor.yaml).
+#   micromamba env create -f envs/phagefactor.yaml), or by Snakemake itself with
+# --sdm conda (the `conda:` env of every rule but phynteny).
 # A Bioconda install of phageFACTor already contains all of this.
+# nodefaults: conda-forge + bioconda only, never Anaconda's licensed channels.
 name: phagefactor
 channels:
   - conda-forge
   - bioconda
+  - nodefaults
 dependencies:
   - python>=3.10
   - pharokka

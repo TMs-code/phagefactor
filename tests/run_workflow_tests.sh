@@ -196,10 +196,14 @@ smk "$W/in_genome" "$W/g_smk" --config phynteny=true input_dir="$W/in_genome" ru
     && grep -q "PHYNTENY RAN" "$W/last.log" && grep -q "PHYNTENY: ON" "$W/last.log" \
     && pass "phynteny + integration, flagged at start and end" || fail "phynteny"
 [[ ! -e "$W/g_smk/cache" && ! -e "$W/g_smk/skipped_genomes.txt" \
-   && -f "$W/g_smk/05_phynteny/run/skipped_genomes.txt" && -L "$W/g_smk/05_phynteny/run/cache" \
+   && -f "$W/g_smk/05_phynteny/run/skipped_genomes.txt" && -L "$W/g_smk/logs/smk/phynteny_work/cache" \
    && -f "$W/phycache/models--facebook--esm2_t33_650M_UR50D/weights.bin" ]] \
     && pass "phynteny: ESM2 cache shared, nothing written to the run root" \
     || fail "phynteny: cache/skipped_genomes.txt location ($(ls "$W/g_smk" | tr '\n' ' '))"
+cp -a "$W/g_smk" "$W/g_phyfail"
+MOCK_PHYNTENY_FAIL=1 smk "$W/in_genome" "$W/g_phyfail" --config phynteny=true input_dir="$W/in_genome" run_dir="$W/g_phyfail" -R phynteny \
+    && fail "a failed phynteny passed as done" \
+    || { [[ ! -f "$W/g_phyfail/05_phynteny/.phynteny_done" ]] && pass "a failed phynteny fails its job (no done marker)" || fail "phynteny failure: marker written"; }
 R_HTML="$W/g_smk/04_output/report.html"
 python3 - "$R_HTML" "$W/g_smk/04_output/final_annotations_table.csv" <<'PY' && pass "report.html: all genes embedded, phynteny + GenBank coordinates included" || fail "report.html content"
 import json, re, sys, pandas as pd
@@ -305,6 +309,75 @@ assert hit_kingdom("561", "Homo sapiens", "d_Bacteria") == ("Bacteria", "lineage
 assert hit_kingdom("256318", "metagenome", "")[0] == "Unknown"          # no domain
 assert hit_kingdom("", "Escherichia coli", "") == ("Bacteria", "name")
 PY
+
+# ------------------------------------------------------------------------------
+echo "[11] Snakemake module (snakedeploy layout), --sdm conda, workflow catalog"
+python3 - "$R" <<'PY' && pass "CODE_FILES lists every script the jobs run" || fail "CODE_FILES incomplete (workflow/Snakefile)"
+import re, sys
+from pathlib import Path
+r = Path(sys.argv[1])
+src = (r / "workflow/Snakefile").read_text()
+listed = set(re.findall(r'"([^"]+)"', re.search(r"CODE_FILES = \((.*?)\n\)", src, re.S).group(1)))
+need = {str(p.relative_to(r)) for p in [*r.glob("scripts/[0-9]*.py"), *r.glob("scripts/lib/*"),
+                                         *r.glob("workflow/scripts/*")] if p.is_file()}
+need |= set(re.findall(r"\$PHAGEFACTOR_HOME/(\S+?\.py)", src))
+missing = sorted(f for f in need - listed if "__pycache__" not in f)
+missing += sorted(f for f in listed if not (r / f).is_file())
+print("\n".join(f"        {f}" for f in missing)); sys.exit(bool(missing))
+PY
+# the workflow as a git repo, used the way snakedeploy deploys it: a host
+# Snakefile with `module ... snakefile: <git source>`, no code dir on disk
+G="$W/gitrepo"; mkdir -p "$G"; ( cd "$R" && tar --exclude=.snakemake --exclude=__pycache__ -cf - . ) | ( cd "$G" && tar -xf - )
+git -C "$G" init -q && git -C "$G" add -A && git -C "$G" -c user.name=t -c user.email=t@t commit -qm test && git -C "$G" tag vtest
+D="$W/deployed"; mkdir -p "$D"; cp -r "$R/config" "$D/"; cp -r example_data/genome_2campy/input "$D/input"
+cat > "$D/Snakefile" <<EOF
+configfile: "config/config.yaml"
+config["project"]["host_genus"] = "Testgenus"     # a config.yaml section from the host
+module phagefactor:
+    snakefile: gitfile("$G", path="workflow/Snakefile", tag="vtest")
+    config: config
+use rule * from phagefactor
+EOF
+( cd "$D" && snakemake --cores 4 --config search_mode=none > "$W/last.log" 2>&1 ) \
+    && [[ -s "$D/runs/run/04_output/final_annotations_table.csv" && -f "$D/.snakemake/phagefactor/code/scripts/lib/config.py" ]] \
+    && pass "module from a git source: code fetched to .snakemake/phagefactor/code, full run" \
+    || { fail "module from a git source"; tail -20 "$W/last.log"; }
+# cluster jobs re-read the host Snakefile from Snakemake's working dir: it must
+# stay the project dir (host `configfile: config/config.yaml`), not the run dir
+[[ -d "$D/.snakemake/metadata" && ! -e "$D/runs/run/.snakemake" && -s "$D/runs/run/logs/smk/curate.log" ]] \
+    && pass "module: Snakemake stays in the project dir, outputs and logs in the run dir" \
+    || fail "module: working dir moved to the run dir (cluster jobs would not find config/config.yaml)"
+( cd "$D/runs/run" && snakemake -s "$D/Snakefile" -d "$D" -n --config search_mode=none > "$W/last.log" 2>&1 ) \
+    && grep -q "Nothing to be done" "$W/last.log" && pass "module: re-parse as a cluster job does (cwd = project dir)" \
+    || { fail "module: re-parse from the project dir"; tail -5 "$W/last.log"; }
+# failure records of an earlier run are cleared at launch, also in a module
+mkdir -p "$D/runs/run/logs/smk/.failures/pharokka"
+for i in 1 2 3 4 5; do touch "$D/runs/run/logs/smk/.failures/pharokka/old$i.fail"; done
+( cd "$D" && snakemake --cores 4 -R pharokka --config search_mode=none > "$W/last.log" 2>&1 ) \
+    && pass "module: failure records of an earlier run cleared at launch" \
+    || { fail "module: stale failure records skipped the jobs"; grep -m1 skipped "$W/last.log"; }
+grep -qs "host_genus: Testgenus" "$D/.snakemake/phagefactor/config.yaml" \
+    && pass "module config: a config.yaml section from the host is merged" || fail "module config section not merged"
+got=$(cd "$D" && snakemake -n --config search_mode=none 2>&1 | grep -c "Nothing to be done")
+[[ "$got" == 1 ]] && pass "module re-launch: nothing re-runs (fetched code keeps its mtimes)" || fail "module re-launch re-runs jobs"
+# --sdm conda: envs/*.yaml are built by Snakemake, no tool or env check up front
+if command -v conda > /dev/null; then
+    ( cd "$D" && PATH="$NOTOOLS_PATH" snakemake -n --sdm conda --config search_mode=none run_dir=runs/conda > "$W/last.log" 2>&1 ) \
+        && fail "--sdm conda without a phold database accepted" \
+        || { grep -q "phold database not found" "$W/last.log" && pass "--sdm conda: missing phold database caught before submitting" \
+             || { fail "--sdm conda phold database check"; tail -5 "$W/last.log"; }; }
+    mkdir -p "$W/phold_db_conda"
+    ( cd "$D" && PATH="$NOTOOLS_PATH" PHOLD_DB="$W/phold_db_conda" RUN_PHYNTENY=1 snakemake -n --sdm conda --config search_mode=none run_dir=runs/conda > "$W/last.log" 2>&1 ) \
+        && grep -q "envs/phagefactor.yaml.* will be created" "$W/last.log" && grep -q "envs/phynteny.yaml.* will be created" "$W/last.log" \
+        && pass "--sdm conda: both envs from envs/*.yaml, tools not needed up front" \
+        || { fail "--sdm conda dry run"; tail -10 "$W/last.log"; }
+else
+    echo "  SKIP  --sdm conda dry run (no conda on PATH)"
+fi
+( cd "$R" && PATH="$NOTOOLS_PATH" MAMBA_EXE= CONDA_EXE= MAMBA_ROOT_PREFIX="$W/nowhere" \
+    snakemake -s workflow/Snakefile -c 1 -d .test --forceall --rulegraph > "$W/last.log" 2>&1 ) \
+    && grep -q 'label = "curate"' "$W/last.log" && pass "catalog rule graph from .test/ (no tools, no databases)" \
+    || { fail "catalog rule graph"; tail -10 "$W/last.log"; }
 
 echo
 echo "[tests] ${N_PASS} passed, ${N_FAIL} failed   (work dir: $W)"

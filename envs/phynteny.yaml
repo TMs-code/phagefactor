@@ -1,14 +1,18 @@
 # Phynteny Transformer environment (separate: torch + setuptools/scikit-learn pins
 # clash with the tool env). Created by `phagefactor install-envs`, which also
-# downloads the models (install_models).
+# downloads the models (install_models); with --sdm conda, Snakemake builds it and
+# the phynteny job downloads the models on its first run.
 name: phynteny
 channels:
   - conda-forge
   - bioconda
+  - nodefaults
 dependencies:
   - python=3.10
   - biopython
   - pandas
+  - pyyaml               # the pipeline's settings (scripts/lib/config.py)
+  - requests             # install_models downloads the models (not declared by phynteny_transformer)
   - pip
   - pip:
       - "setuptools<82"          # pkg_resources, needed by install_models

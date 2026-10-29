@@ -158,6 +158,30 @@ phagefactor run --dag | dot -Tsvg > dag.svg   # picture of the jobs
 - **Step logs:** `<run_dir>/logs/smk/<step>.log`.
 - **SLURM job logs:** `<run_dir>/.snakemake/slurm_logs/`.
 
+### Plain Snakemake, as a module (since 1.2)
+
+The repo follows the
+[workflow catalog](https://snakemake.github.io/snakemake-workflow-catalog) layout,
+so it also runs without the `phagefactor` command, and other workflows can include it:
+
+```bash
+snakedeploy deploy-workflow https://github.com/TMs-code/phagefactor myjob --tag v1.2.0
+cd myjob && snakemake --cores all --sdm conda
+```
+
+`snakedeploy` writes a `workflow/Snakefile` that loads this one from GitHub
+(`module phagefactor: snakefile: github(...)`) and copies `config/`. The project
+dir is the directory Snakemake runs in, as with `phagefactor run`. The scripts
+are fetched into `.snakemake/phagefactor/code/`. A host workflow passes its
+settings with `config:`: the `config.yaml` sections (`project`, `foldseek`,
+`curate`, ...) are merged over `config/config.yaml`, and every other key is a
+`workflow.yaml` setting. Details: [`config/README.md`](../config/README.md).
+
+`--sdm conda` builds `envs/phagefactor.yaml` and `envs/phynteny.yaml` and runs
+each job in its rule's env. Without it, jobs use `tools_env` / `phynteny_env` as
+above. Keep one route per run dir: the profiles' `software-env` rerun trigger can
+treat a switch as a software change and re-run finished steps.
+
 ---
 
 ## 4. Run dirs made by version 1.0
@@ -188,6 +212,8 @@ The tests run every mode with mock tools (`tests/mock_bin/`). They check:
 - failure + resume, and stale batch handling;
 - tool environment lookup;
 - `phagefactor init` / `run` with a read-only code dir (nothing written to it);
-- taking over a run dir without Snakemake records.
+- taking over a run dir without Snakemake records;
+- use as a module loaded from a git source (snakedeploy layout), `--sdm conda`
+  (dry run, when conda is on PATH) and the catalog's rule graph from `.test/`.
 
 Run them after any change to the Snakefile or the scripts.

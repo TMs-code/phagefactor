@@ -1,0 +1,7 @@
+# Minimal project for the Snakemake workflow catalog (it draws the rule graph with
+#   snakemake -s workflow/Snakefile -c 1 -d .test --forceall --rulegraph)
+# and for `snakemake --lint`. No tools or databases are needed for that.
+input_mode: genome
+preflight: false
+tools_env: ""      # no micromamba/conda lookup on the catalog's runner
+phynteny_env: ""

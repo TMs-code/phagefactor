@@ -1,0 +1,9 @@
+usage:
+  mandatory-flags:
+    desc: >-
+      None. The databases are not downloaded by the workflow: download them once and
+      set databases.db_root in config/config.yaml (see config/README.md).
+    flags: ""
+  software-stack-deployment:
+    conda: true
+  report: false

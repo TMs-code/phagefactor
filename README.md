@@ -70,6 +70,31 @@ you have one. Best effort, as cluster time allows.
 
 ## Install
 
+Three ways in. All of them use the same workflow and conda-forge + bioconda
+packages only (no Anaconda `defaults` channel). conda, mamba and micromamba all work.
+
+**Bioconda** (the `phagefactor` command with the tools in the same env):
+
+```bash
+conda create -n phagefactor -c conda-forge -c bioconda phagefactor
+conda activate phagefactor
+phagefactor install-envs --phynteny   # phynteny has its own env
+phagefactor databases /data/phagefactor_db --pharokka --phold --pdb100 --swissprot --taxdump
+```
+
+**Snakemake workflow** ([workflow catalog](https://snakemake.github.io/snakemake-workflow-catalog)
+layout, to run with plain Snakemake or combine with other workflows):
+
+```bash
+snakedeploy deploy-workflow https://github.com/TMs-code/phagefactor myjob --tag v1.2.0
+cd myjob     # edit config/config.yaml (databases.db_root), put the FASTAs in input/fasta/
+snakemake --cores all --sdm conda
+```
+
+Snakemake builds the tool envs itself. See [`config/README.md`](config/README.md).
+
+**Git clone** (development):
+
 ```bash
 git clone https://github.com/TMs-code/phagefactor.git
 export PATH="$PWD/phagefactor/bin:$PATH"           # the `phagefactor` command

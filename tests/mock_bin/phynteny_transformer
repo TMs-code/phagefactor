@@ -8,7 +8,12 @@ from Bio import SeqIO
 ap = argparse.ArgumentParser(); ap.add_argument("gbk"); ap.add_argument("-o")
 ap.add_argument("-f", action="store_true"); ap.add_argument("-m")
 a = ap.parse_args()
-out = Path(a.o); out.mkdir(parents=True, exist_ok=True)
+if os.environ.get("MOCK_PHYNTENY_FAIL"):
+    sys.exit("mock phynteny: failing on request")
+out = Path(a.o)
+if a.f and out.exists():     # like the real tool: -f deletes the output dir first
+    shutil.rmtree(out)
+out.mkdir(parents=True, exist_ok=True)
 cats = ["head and packaging", "tail", "lysis", "integration and excision", "unknown"]
 rows = []
 for rec in SeqIO.parse(a.gbk, "genbank"):

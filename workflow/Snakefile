@@ -48,10 +48,53 @@ from snakemake.exceptions import WorkflowError
 
 min_version("8.20")
 
-CODE = Path(workflow.basedir).resolve().parent
 # Project dir: where snakemake is launched (inherited by cluster jobs).
 PROJECT = Path(os.environ.get("PHAGEFACTOR_PROJECT") or os.getcwd()).resolve()
 os.environ["PHAGEFACTOR_PROJECT"] = str(PROJECT)
+
+# Files the jobs run or read from the code dir. A module loaded from GitHub
+# (snakedeploy) has no code dir on disk: these are fetched through Snakemake's
+# source cache and copied to <project>/.snakemake/phagefactor/code/.
+CODE_FILES = (
+    "VERSION", "config/config.yaml", "config/workflow.yaml",
+    "scripts/00n_translate_pangenome.py", "scripts/00p_split_protein_batches.py",
+    "scripts/01c_merge_phold.py", "scripts/01p_merge_phold_proteins.py",
+    "scripts/02d_foldseek_3di.py", "scripts/02w_foldseek_webapi.py",
+    "scripts/03_compare_annotations.py", "scripts/04_curate_annotations.py",
+    "scripts/05_build_output.py", "scripts/06_phynteny.py", "scripts/07_integrate.py",
+    "scripts/08_pangenome_reference.py", "scripts/09_report.py",
+    "scripts/lib/config.py", "scripts/lib/detect_input_type.py", "scripts/lib/esmfold_cache.py",
+    "scripts/lib/foldseek_scoring.py", "scripts/lib/lexicon.py", "scripts/lib/report_template.html",
+    "scripts/lib/rules.py", "scripts/lib/synteny_hint.py", "scripts/lib/taxonomy.py",
+    "scripts/lib/utils.py", "workflow/scripts/empty_foldseek_tables.py",
+)
+
+
+def _write_if_changed(path, data):
+    """Unchanged files keep their mtime, so a re-parse re-runs nothing."""
+    path = Path(path)
+    if path.is_file() and path.read_bytes() == data:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}")
+    tmp.write_bytes(data)
+    os.replace(tmp, path)
+
+
+def code_dir():
+    # workflow.basedir is the MAIN Snakefile's dir (the host's, in a module):
+    # the dir of THIS Snakefile is current_basedir
+    from snakemake.sourcecache import LocalSourceFile
+    here = workflow.current_basedir
+    if isinstance(here, LocalSourceFile):
+        return Path(here.get_path_or_uri(secret_free=True)).resolve().parent
+    cache = PROJECT / ".snakemake" / "phagefactor" / "code"
+    for f in CODE_FILES:
+        _write_if_changed(cache / f, Path(workflow.source_path("../" + f)).read_bytes())
+    return cache
+
+
+CODE = code_dir()
 
 
 def project_or_default(name):
@@ -78,13 +121,26 @@ def _merge(base, over):
 
 USER_SETTINGS = (Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
                  / "phagefactor" / "settings.yaml")
+# Snakemake's `config` (--config, a configfile:, or a host workflow's module
+# `config:`) may also carry config.yaml sections: they are merged over the
+# settings file below. `phynteny` is both: a section (dict) or the on/off switch.
+SCIENCE_SECTIONS = ("project", "paths", "databases", "foldseek", "compare", "curate",
+                    "phynteny", "precomputed")
+_cli = dict(config)
+_sci_over = {k: _cli.pop(k) for k in SCIENCE_SECTIONS if isinstance(_cli.get(k), dict)}
 # code defaults < user (machine) settings < project < --config
 _layered = _merge(_merge(_yaml(CODE / "config" / "workflow.yaml"), _yaml(USER_SETTINGS)),
                   _yaml(PROJECT / "config" / "workflow.yaml"))
-_cli = dict(config)
 config.clear()
 config.update(_merge(_layered, _cli))
 SCI_FILE = Path(os.environ.get("PHAGEFACTOR_CONFIG") or project_or_default("config.yaml")).resolve()
+if _sci_over:
+    _sci_base = _yaml(SCI_FILE)
+    _sci = _merge(_sci_base, _sci_over)
+    if _sci != _sci_base:
+        # the scripts read the settings from a file: write the merged one
+        SCI_FILE = PROJECT / ".snakemake" / "phagefactor" / "config.yaml"
+        _write_if_changed(SCI_FILE, yaml.safe_dump(_sci, sort_keys=False).encode())
 os.environ["PHAGEFACTOR_CONFIG"] = str(SCI_FILE)
 
 
@@ -129,7 +185,13 @@ os.environ["PHAGEFACTOR_RUN_DIR"] = str(RUN_DIR)
 if RUN_DIR == CODE or CODE in RUN_DIR.parents and not os.access(CODE, os.W_OK):
     raise WorkflowError(f"run dir {RUN_DIR} is inside the read-only code dir {CODE}: "
                         "run from a project dir (phagefactor init <dir>)")
-workdir: str(RUN_DIR)
+# Run on its own: Snakemake works in the run dir (its .snakemake/ lives there).
+# As a module: not. Cluster jobs re-read the host Snakefile from Snakemake's
+# working dir, and its relative `configfile:` must still resolve. The rules use
+# absolute paths only, so both work the same.
+AS_MODULE = Path(workflow.basedir).resolve() != CODE / "workflow"
+if not AS_MODULE:
+    workdir: str(RUN_DIR)
 
 SEARCH_MODE = setting("search_mode", "SEARCH_MODE", "local")
 if SEARCH_MODE not in ("local", "webapi", "none"):
@@ -177,13 +239,25 @@ def env_prefix(name, tools, fallback):
     return f"{RUNNER} {name}"
 
 
-RUNNER = find_env_runner()
-os.environ["PF_TOOLS"] = env_prefix(setting("tools_env", "MAMBA_ENV", "auto"),
-                                    ("pharokka.py", "phold", "foldseek"), "phagefactor")
-os.environ["PF_PHYNTENY"] = (env_prefix(setting("phynteny_env", "PHYNTENY_ENV", "auto"),
-                                        ("phynteny_transformer",), "phynteny")
-                             if RUN_PHYNTENY else "")
-TOOLS_LABEL = os.environ["PF_TOOLS"].split()[-1] if os.environ["PF_TOOLS"] else "(current)"
+# --sdm conda: Snakemake builds envs/*.yaml and runs each job in its rule's
+# `conda:` env, so the commands need no prefix. Otherwise the `conda:`
+# directives are ignored and jobs reach the named envs through the prefix.
+TOOLS_CONDA    = "../envs/phagefactor.yaml"
+PHYNTENY_CONDA = "../envs/phynteny.yaml"
+USE_CONDA = "conda" in {getattr(m, "name", str(m)).lower()
+                        for m in workflow.deployment_settings.deployment_method}
+if USE_CONDA:
+    RUNNER = None
+    os.environ["PF_TOOLS"] = os.environ["PF_PHYNTENY"] = ""
+    TOOLS_LABEL = "(--sdm conda)"
+else:
+    RUNNER = find_env_runner()
+    os.environ["PF_TOOLS"] = env_prefix(setting("tools_env", "MAMBA_ENV", "auto"),
+                                        ("pharokka.py", "phold", "foldseek"), "phagefactor")
+    os.environ["PF_PHYNTENY"] = (env_prefix(setting("phynteny_env", "PHYNTENY_ENV", "auto"),
+                                            ("phynteny_transformer",), "phynteny")
+                                 if RUN_PHYNTENY else "")
+    TOOLS_LABEL = os.environ["PF_TOOLS"].split()[-1] if os.environ["PF_TOOLS"] else "(current)"
 
 # shared model cache for phynteny (ESM2, ~2.5 GB), one for all run dirs
 PHYNTENY_CACHE = str(Path(os.path.expanduser(setting(
@@ -228,7 +302,7 @@ PROTEIN_LIKE = INPUT_MODE in ("protein", "pangenome")
 def P(x):
     return str(x)
 
-LOGS         = "logs/smk"                      # relative to the run dir
+LOGS         = str(RUN_DIR / "logs" / "smk")
 PHOLD_COMB   = Path(PF.PHOLD_COMB_DIR)
 COMBINED     = [P(PF.PHOLD_COMBINED_TSV), P(PF.PHOLD_3DI_FASTA), P(PF.PHOLD_AA_FASTA)]
 TARGETS_CSV  = P(PF.HYPO_GENE_LIST)
@@ -396,12 +470,18 @@ def preflight():
             tools.append("phold")
     elif pending(PF.PHOLD_COMBINED_TSV):
         tools.append("phold")
+    # without phold_db/, phold looks in its own env: empty in an env --sdm conda builds
+    if USE_CONDA and "phold" in tools and PHOLD_MODE != "remote" and not Path(PF.PHOLD_DB).is_dir():
+        problems.append(f"phold database not found: {PF.PHOLD_DB} (with --sdm conda phold "
+                        "cannot use a database installed inside another env: "
+                        "phagefactor databases --phold, or databases.phold_db in config.yaml)")
     if SEARCH_MODE == "local" and pending(PER_DB_DIR):
         tools.append("foldseek")
         dbs = {n: d for n, d in PF.FOLDSEEK_LOCAL_DBS.items() if not FOLDSEEK_DBS or n in FOLDSEEK_DBS}
         if not any(Path(str(d) + ".dbtype").is_file() for d in dbs.values()):
             problems.append("no FoldSeek database found: " + ", ".join(str(d) for d in dbs.values()))
-    miss = _missing_tools(tools)
+    # --sdm conda: the envs are built after this check, the tools come with them
+    miss = [] if USE_CONDA else _missing_tools(tools)
     if miss:
         problems.append(f"not found in tool environment '{TOOLS_LABEL}': {' '.join(miss)}")
     if problems:
@@ -439,7 +519,10 @@ def guarded(rule_name, key, body):
     )
 
 
-onstart:
+# At launch, in the main process (never in a cluster job). Not an `onstart:`
+# handler: Snakemake ignores those of a module, and stale failure records
+# would then skip every job of a rule that failed in an earlier run.
+if not os.environ.get("SLURM_JOB_ID"):
     shutil.rmtree(FAIL_DIR, ignore_errors=True)
     print(f"[phageFACTor] project: {PROJECT}", file=sys.stderr)
     print(f"[phageFACTor] input : {INPUT_DIR}", file=sys.stderr)
@@ -457,7 +540,7 @@ onsuccess:
     if Path(REPORT).is_file():
         print(f"[phageFACTor] REPORT: {REPORT}  (open in a browser)", file=sys.stderr)
     if RUN_PHYNTENY:
-        _log = Path(RUN_DIR) / LOGS / "phynteny.log"
+        _log = Path(LOGS) / "phynteny.log"
         _txt = _log.read_text(errors="ignore") if _log.is_file() else ""
         if "[SKIP]" in _txt:
             _why = [l for l in _txt.splitlines() if "[SKIP]" in l][0]
@@ -486,6 +569,7 @@ rule pharokka:
         done = str(Path(PF.PHAROKKA_OUT_DIR) / "{prophage}" / ".pharokka_done"),
     threads: threads_of("pharokka")
     resources: **res("pharokka")
+    conda: TOOLS_CONDA
     log: f"{LOGS}/pharokka/{{prophage}}.log"
     shell:
         # default gene caller Phanotate (not --fast/pyrodigal-gv): more small phage ORFs
@@ -508,6 +592,7 @@ rule phold:
         done = str(Path(PF.PHOLD_OUT_DIR) / "{prophage}" / ".phold_done"),
     threads: threads_of("phold")
     resources: **res("phold", gpu=PHOLD_GPU)
+    conda: TOOLS_CONDA
     log: f"{LOGS}/phold/{{prophage}}.log"
     shell:
         # $PF_PHOLD_CMD: run | remote; $PF_PHOLD_ARGS: --cpu | --foldseek_gpu --autotune;
@@ -528,6 +613,7 @@ if INPUT_MODE == "genome":
             COMBINED,
         threads: threads_of("phold_merge")
         resources: **res("phold_merge")
+        conda: TOOLS_CONDA
         log: f"{LOGS}/phold_merge.log"
         shell:
             "$PF_TOOLS python3 $PHAGEFACTOR_HOME/scripts/01c_merge_phold.py > {log} 2>&1"
@@ -546,6 +632,7 @@ if INPUT_MODE == "pangenome":
         params:
             table  = setting("pangenome_table", "PANGENOME_TABLE", 11, int),
             prefix = setting("pangenome_prefix", "PANGENOME_PREFIX", "pang_"),
+        conda: TOOLS_CONDA
         log: f"{LOGS}/pangenome_translate.log"
         shell:
             "$PF_TOOLS python3 $PHAGEFACTOR_HOME/scripts/00n_translate_pangenome.py "
@@ -565,6 +652,7 @@ if PROTEIN_LIKE:
             fasta_dir  = PROTEIN_FASTA_DIR,
         threads: 1
         resources: **res("split_proteins")
+        conda: TOOLS_CONDA
         log: f"{LOGS}/split_proteins.log"
         shell:
             # Snakemake removed the batch list, so 00p always re-splits (its own
@@ -584,6 +672,7 @@ if PROTEIN_LIKE:
             bdir = str(Path(PF.PHOLD_OUT_DIR) / "proteins" / "batches" / "{batch}"),
         threads: threads_of("phold_proteins")
         resources: **res("phold_proteins", gpu=PHOLDP_GPU)
+        conda: TOOLS_CONDA
         log: f"{LOGS}/phold_proteins/{{batch}}.log"
         shell:
             # proteins-predict (ProstT5 -> 3Di) then proteins-compare. GPU only when
@@ -616,6 +705,7 @@ if PROTEIN_LIKE:
             COMBINED,
         threads: threads_of("phold_proteins_merge")
         resources: **res("phold_proteins_merge")
+        conda: TOOLS_CONDA
         log: f"{LOGS}/phold_proteins_merge.log"
         shell:
             "$PF_TOOLS python3 $PHAGEFACTOR_HOME/scripts/01p_merge_phold_proteins.py > {log} 2>&1"
@@ -636,6 +726,7 @@ rule foldseek_targets:
         meta    = GENE_META,
     threads: threads_of("foldseek_targets")
     resources: **res("foldseek_targets")
+    conda: TOOLS_CONDA
     log: f"{LOGS}/foldseek_targets.log"
     shell:
         "$PF_TOOLS python3 $PHAGEFACTOR_HOME/scripts/02d_foldseek_3di.py --targets_only > {log} 2>&1"
@@ -655,6 +746,7 @@ if SEARCH_MODE == "local":
             qdb  = P(FS3DI / "query_db"),
         threads: threads_of("foldseek_search")
         resources: **res("foldseek_search", qos=QOS_LONG)
+        conda: TOOLS_CONDA
         log: f"{LOGS}/foldseek_search.log"
         shell:
             # fresh query FASTAs/DB: their reuse check only compares counts
@@ -678,6 +770,7 @@ if SEARCH_MODE == "local":
             raw = P(FS3DI / "raw_hits"),
         threads: threads_of("foldseek_parse")
         resources: **res("foldseek_parse")
+        conda: TOOLS_CONDA
         log: f"{LOGS}/foldseek_parse.log"
         shell:
             # per-gene m8 files are a cache keyed on existence only: rebuild them
@@ -702,6 +795,7 @@ elif SEARCH_MODE == "webapi":
             aa  = P(PF.PHOLD_AA_FASTA),
             m8  = P(FS3DI / "webapi_hits.m8"),
             all = P(PF.FOLDSEEK_3DI_ALL),
+        conda: TOOLS_CONDA
         log: f"{LOGS}/foldseek_webapi.log"
         shell:
             # proteins (<= 400 aa) are folded with ESMFold, searched on the server; scored
@@ -718,6 +812,7 @@ else:  # none: pharokka + phold evidence only
         output:
             best = BEST_HIT,
             top3 = TOP3,
+        conda: TOOLS_CONDA
         log: f"{LOGS}/foldseek_none.log"
         shell:
             "$PF_TOOLS python3 $PHAGEFACTOR_HOME/workflow/scripts/empty_foldseek_tables.py "
@@ -741,6 +836,7 @@ rule compare:
         cfg = PARAMS_COMPARE,
     threads: threads_of("compare")
     resources: **res("compare")
+    conda: TOOLS_CONDA
     log: f"{LOGS}/compare.log"
     shell:
         "$PF_TOOLS python3 $PHAGEFACTOR_HOME/scripts/03_compare_annotations.py > {log} 2>&1"
@@ -766,6 +862,7 @@ rule curate:
         stale_gbk = P(PF.RAW_GB) if PROTEIN_LIKE else "",
     threads: threads_of("curate")
     resources: **res("curate")
+    conda: TOOLS_CONDA
     log: f"{LOGS}/curate.log"
     shell:
         "( if [ -n '{params.stale_gbk}' ]; then rm -f '{params.stale_gbk}'; fi; "
@@ -776,6 +873,16 @@ rule curate:
 # =============================================================================
 # Phynteny + synteny integration (ON by default)
 # =============================================================================
+# An env built by --sdm conda has no phynteny models yet: the first job downloads
+# them into it (`phagefactor install-envs` does this for the named env).
+PHYNTENY_MODELS_SH = (
+    "  if ! python3 -c \"import importlib.util as u, pathlib, sys; "
+    "s = u.find_spec('phynteny_utils'); d = pathlib.Path(list(s.submodule_search_locations)[0]) / 'models'; "
+    "sys.exit(not (d.is_dir() and any(d.iterdir())))\" 2>/dev/null; then "
+    "    echo 'phynteny models not found in the env: install_models'; install_models; "
+    "  fi; "
+) if USE_CONDA else ""
+
 rule phynteny:
     input:
         final = FINAL_TABLE,
@@ -788,27 +895,34 @@ rule phynteny:
         out = str(PHYNTENY_DIR),
         threshold = SCI.get("phynteny", {}).get("threshold", 0.8),
         cache = PHYNTENY_CACHE,
+        work = f"{LOGS}/phynteny_work",
     threads: threads_of("phynteny")
     resources: **res("phynteny")
+    conda: PHYNTENY_CONDA
     log: f"{LOGS}/phynteny.log"
     shell:
         # phynteny_transformer writes ./cache/ (the ~2.5 GB ESM2 model, hard-coded
         # cache_dir="cache/") and ./skipped_genomes.txt into its working dir: run it
-        # from 05_phynteny/run/ with cache/ linked to ONE shared cache, so the
-        # model is downloaded once, not into every run dir.
-        "( set -e; mkdir -p {params.out}/run '{params.cache}'; "
+        # from logs/smk/phynteny_work/ with cache/ linked to ONE shared cache, so the
+        # model is downloaded once, not into every run dir. Not from inside
+        # 05_phynteny/: -f deletes that dir, the working dir with it.
+        # `; touch`, not `&& touch`: set -e is off on the left of && (a failed
+        # phynteny would pass as done).
+        "( set -e; mkdir -p {params.out} '{params.cache}' {params.work}; "
         "  if [ ! -f {params.gbk} ]; then "
         "    echo '[SKIP] no {params.gbk} (no GenBank could be built): phynteny not run'; exit 0; "
         "  fi; "
-        "  cd {params.out}/run; ln -sfn '{params.cache}' cache; "
+        "  cd {params.work}; ln -sfn '{params.cache}' cache; rm -f skipped_genomes.txt; "
+        + PHYNTENY_MODELS_SH +
         "  $PF_PHYNTENY python3 $PHAGEFACTOR_HOME/scripts/06_phynteny.py "
         "    --input {params.gbk} --output {params.out} --threshold {params.threshold}; "
+        "  if [ -f skipped_genomes.txt ]; then mkdir -p {params.out}/run; mv skipped_genomes.txt {params.out}/run/; fi; "
         "  if [ -f {params.out}/phynteny.tsv ]; then "
         "    $PF_TOOLS python3 $PHAGEFACTOR_HOME/scripts/07_integrate.py "
         "      --final {input.final} --gbk {params.gbk} --phynteny {params.out}/phynteny.tsv "
         "      --out {params.out}/final_annotations_integrated.csv --threshold {params.threshold}; "
         "  else echo '[SKIP] phynteny produced no table'; fi "
-        ") > {log} 2>&1 && touch {output.done}"
+        ") > {log} 2>&1; touch {output.done}"
 
 
 # =============================================================================
@@ -827,6 +941,7 @@ if INPUT_MODE == "pangenome":
             prefix = P(Path(PF.OUTPUT_DIR) / "pangenome_reference"),
         threads: 1
         resources: **res("pangenome")
+        conda: TOOLS_CONDA
         log: f"{LOGS}/pangenome_reference.log"
         shell:
             "$PF_TOOLS python3 $PHAGEFACTOR_HOME/scripts/08_pangenome_reference.py "
@@ -851,6 +966,7 @@ rule report:
         integrated = P(Path(PF.PHYNTENY_DIR) / "final_annotations_integrated.csv"),
         gbk = UPDATED_GB,
         title = f"{RUN_DIR.parent.name}/{RUN_DIR.name}",
+    conda: TOOLS_CONDA
     log: f"{LOGS}/report.log"
     shell:
         "$PF_TOOLS python3 $PHAGEFACTOR_HOME/scripts/09_report.py --final {input.final} "
